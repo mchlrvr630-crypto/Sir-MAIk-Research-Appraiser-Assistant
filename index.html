@@ -455,7 +455,7 @@ document.getElementById('builder-table').addEventListener('paste', function(e) {
 });
 
 // ==========================================
-// 6. GEMINI AI GENERATION LOGIC (FIXED JSON MODE)
+// 6. GEMINI AI GENERATION LOGIC (DIRECT TARGET)
 // ==========================================
 async function generateAppraisal() {
     const errorBox = document.getElementById('error-box');
@@ -491,45 +491,32 @@ async function generateAppraisal() {
     
     JSON Structure: { "Grades": [ {"criterion": "...", "score": "...", "justification": "..."} ], "StrongPoints": ["..."], "Improvements": ["..."] }`;
 
-    const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro", "gemini-pro"];
-    let successfulData = null;
-    let lastErrorMessage = "";
-
     try {
-        for (const model of modelsToTry) {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-            
-            const response = await fetch(url, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                // REMOVED 'responseMimeType' strictness to allow full fallback compatibility!
-                body: JSON.stringify({ 
-                    contents: [{ parts: [{ text: promptText }] }]
-                })
-            });
-            
-            const data = await response.json();
-            
-            if (data.error) {
-                if (data.error.message.includes("limit: 0") || data.error.message.includes("quota")) {
-                    localStorage.removeItem("gamai_key"); 
-                    throw new Error("<b>Quota Exceeded (Limit: 0).</b> Your API Key has been restricted from the free tier. <br><br><b>How to fix:</b> Go to Google AI Studio, click 'Create API Key', and select <b>'Create API key in NEW project'</b>. Your bad key has been automatically cleared. Click Generate again to enter your new key.");
-                }
-                lastErrorMessage = data.error.message;
-                continue; 
-            }
-            
-            successfulData = data;
-            break;
-        }
-
-        if (!successfulData) {
-            throw new Error(`Failed to generate content. Last error: ${lastErrorMessage}`);
-        }
-
-        let aiText = successfulData.candidates[0].content.parts[0].text;
+        // Target the modern, correct endpoint directly
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
         
-        // Clean up text to ensure JSON parsability just in case the AI adds markdown anyway
+        const response = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+                contents: [{ parts: [{ text: promptText }] }]
+            })
+        });
+        
+        const data = await response.json();
+        
+        // Expose the TRUE error if it fails
+        if (data.error) {
+            if (data.error.message.includes("API key not valid")) {
+                localStorage.removeItem("gamai_key");
+                throw new Error("<b>Invalid API Key.</b> Your key was rejected. Click 'Reset API Key' or Generate to enter a new one.");
+            }
+            throw new Error(`<b>Gemini API Error:</b> ${data.error.message}`);
+        }
+
+        let aiText = data.candidates[0].content.parts[0].text;
+        
+        // Clean up text to ensure JSON parsability
         aiText = aiText.replace(/```json/g, '').replace(/```/g, '').trim();
         const appraisal = JSON.parse(aiText);
         
@@ -555,6 +542,7 @@ async function generateAppraisal() {
         saveToHistory(reportHtml);
 
     } catch (err) {
+        // Output the actual error securely
         errorBox.innerHTML = err.message;
         errorBox.style.display = "block";
     } finally {
