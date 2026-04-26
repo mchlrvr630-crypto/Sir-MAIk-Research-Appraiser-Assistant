@@ -26,6 +26,7 @@
             --btn-warn: #e6a817; 
             --btn-save: #2f4858;
             --btn-load: #4b6b55;
+            --btn-export: #226089;
         }
 
         body { 
@@ -72,11 +73,13 @@
         }
         
         .input-box { display: flex; flex-direction: column; margin-bottom: 20px; }
+        .input-row { display: flex; gap: 20px; margin-bottom: 20px; }
+        .input-row .input-box { flex: 1; margin-bottom: 0; }
         label { font-weight: 600; margin-bottom: 8px; font-size: 0.95rem; color: var(--text-main); }
         
         input, textarea { 
             padding: 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 1rem; 
-            transition: 0.2s; font-family: inherit; background: #faf9fc;
+            transition: 0.2s; font-family: inherit; background: #faf9fc; width: 100%; box-sizing: border-box;
         }
         input:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(94, 75, 115, 0.15); background: white;}
         
@@ -107,6 +110,13 @@
         }
         .generate-btn:hover { background: var(--primary); box-shadow: 0 6px 15px rgba(58, 42, 74, 0.3);}
         .generate-btn:disabled { background: #a39eb0; cursor: not-allowed; box-shadow: none;}
+
+        .export-btn {
+            width: 100%; padding: 15px; background: var(--btn-export); color: white; border: none;
+            border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; transition: 0.3s;
+            margin-top: 20px; display: none;
+        }
+        .export-btn:hover { background: #184563; }
         
         /* History Sidebar */
         .history-sidebar { 
@@ -127,19 +137,7 @@
 
         /* Output Formatting */
         #output-area { margin-top: 40px; display: none; padding-top: 30px; border-top: 3px solid var(--primary-light); }
-        
         .report-card { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.03);}
-        .report-header { text-align: center; color: var(--primary); margin-bottom: 25px; font-size: 1.5rem; font-weight: bold; text-transform: uppercase; border-bottom: 2px solid var(--accent); padding-bottom: 10px;}
-        
-        .grade-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-        .grade-table th, .grade-table td { padding: 12px; border: 1px solid var(--border); text-align: left; vertical-align: top;}
-        .grade-table th { background: var(--primary); color: white; }
-        .grade-table td:nth-child(2) { font-weight: bold; color: var(--primary); text-align: center; width: 15%;}
-        
-        .feedback-box { background: #fbfafc; border-left: 5px solid var(--accent); padding: 20px; margin-bottom: 20px; border-radius: 0 6px 6px 0;}
-        .feedback-box h4 { margin-top: 0; color: var(--primary); margin-bottom: 10px; font-size: 1.1rem;}
-        .feedback-box ul { margin-top: 0; padding-left: 20px;}
-        .feedback-box li { margin-bottom: 8px;}
         
     </style>
 </head>
@@ -153,6 +151,18 @@
     </div>
 
     <div class="content">
+
+        <div class="section-title">0. Identification</div>
+        <div class="input-row">
+            <div class="input-box">
+                <label>Name / Author(s)</label>
+                <input type="text" id="student-name" placeholder="e.g. John Doe, Jane Smith" oninput="saveState()">
+            </div>
+            <div class="input-box">
+                <label>Section / Course</label>
+                <input type="text" id="student-section" placeholder="e.g. CS-101" oninput="saveState()">
+            </div>
+        </div>
 
         <div class="section-title">I. Rubric Encoder</div>
         <div class="table-controls">
@@ -189,7 +199,7 @@
                 </tbody>
             </table>
         </div>
-        <div class="builder-tip">💡 Tip: You can type, copy-paste text normally into cells, or paste an entire copied table from Excel directly into the grid.</div>
+        <div class="builder-tip">💡 Tip: Include the point value in your headers (e.g. "Excellent (4)") so the AI can extract the maximum possible score accurately.</div>
 
         <div class="section-title">II. Research Paper Upload</div>
         <div class="input-box">
@@ -208,6 +218,7 @@
         <div id="output-area">
             <div class="report-card" id="report-render">
                 </div>
+            <button onclick="exportToWord()" id="export-btn" class="export-btn">💾 Export Report to Word (.doc) Ready to Print</button>
         </div>
     </div>
 </div>
@@ -258,10 +269,15 @@ function saveState() {
     if(!db) return;
     const tableData = document.getElementById('builder-table').innerHTML;
     const paperText = document.getElementById('paper-text').value;
+    const sName = document.getElementById('student-name').value;
+    const sSec = document.getElementById('student-section').value;
+
     const transaction = db.transaction(['appState'], 'readwrite');
     const store = transaction.objectStore('appState');
     store.put(tableData, 'currentTable');
     store.put(paperText, 'currentPaper');
+    store.put(sName, 'currentName');
+    store.put(sSec, 'currentSection');
 }
 
 function loadState() {
@@ -273,9 +289,9 @@ function loadState() {
             document.querySelectorAll('#builder-table input').forEach(inp => inp.addEventListener('input', saveState));
         }
     };
-    store.get('currentPaper').onsuccess = (e) => {
-        if(e.target.result) document.getElementById('paper-text').value = e.target.result;
-    };
+    store.get('currentPaper').onsuccess = (e) => { if(e.target.result) document.getElementById('paper-text').value = e.target.result; };
+    store.get('currentName').onsuccess = (e) => { if(e.target.result) document.getElementById('student-name').value = e.target.result; };
+    store.get('currentSection').onsuccess = (e) => { if(e.target.result) document.getElementById('student-section').value = e.target.result; };
 }
 
 function saveToHistory(reportHtml) {
@@ -302,6 +318,7 @@ function loadHistory() {
             div.onclick = () => {
                 document.getElementById('report-render').innerHTML = item.report;
                 document.getElementById('output-area').style.display = "block";
+                document.getElementById('export-btn').style.display = "block";
                 document.getElementById('output-area').scrollIntoView({ behavior: 'smooth' });
             };
             list.appendChild(div);
@@ -470,6 +487,8 @@ async function generateAppraisal() {
 
     const paperText = document.getElementById('paper-text').value.trim();
     const rubricData = extractRubricData();
+    const studentName = document.getElementById('student-name').value.trim() || "N/A";
+    const studentSection = document.getElementById('student-section').value.trim() || "N/A";
 
     if(!paperText) { alert("Please upload or paste the Research Paper text."); return; }
     let validRows = rubricData.rows.filter(r => r.some(cell => cell !== ""));
@@ -477,18 +496,22 @@ async function generateAppraisal() {
 
     document.getElementById('loading').style.display = "block";
     document.getElementById('output-area').style.display = "none";
+    document.getElementById('export-btn').style.display = "none";
     document.getElementById('genBtn').disabled = true;
 
     let rubricString = `Rubric Columns: ${rubricData.headers.join(' | ')}\n`;
     validRows.forEach((r, i) => rubricString += `Criterion ${i+1}: ${r.join(' | ')}\n`);
 
     const promptText = `Act as an Expert Academic Research Reviewer. Appraise the paper based ONLY on the provided rubric. 
-    CRITICAL INSTRUCTION: You MUST output ONLY raw JSON. Do not wrap the JSON in markdown blocks.
+    CRITICAL INSTRUCTION: You MUST output ONLY raw JSON. Do not wrap the JSON in markdown blocks. Extract the numerical score from the rubric headers.
     === RUBRIC ===\n${rubricString}\n=== RESEARCH PAPER TEXT ===\n${paperText.substring(0, 30000)}
-    JSON Structure: { "Grades": [ {"criterion": "...", "score": "...", "justification": "..."} ], "StrongPoints": ["..."], "Improvements": ["..."] }`;
+    JSON Structure: { 
+        "Grades": [ {"criterion": "...", "score_awarded": <number>, "max_possible": <number>, "justification": "..."} ], 
+        "StrongPoints": ["..."], 
+        "Improvements": ["..."] 
+    }`;
 
     try {
-        // UPDATED ENDPOINT: Pointing specifically to gemini-2.5-flash as authorized by your key
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
         
         const response = await fetch(url, {
@@ -498,29 +521,68 @@ async function generateAppraisal() {
         });
         
         const data = await response.json();
-        
-        if (data.error) {
-            throw new Error(`<b>Gemini API Error:</b> ${data.error.message}`);
-        }
+        if (data.error) throw new Error(`<b>Gemini API Error:</b> ${data.error.message}`);
 
         let aiText = data.candidates[0].content.parts[0].text.replace(/```json/g, '').replace(/```/g, '').trim();
         const appraisal = JSON.parse(aiText);
         
-        let reportHtml = `<div class="report-header">Official Appraisal Report</div>`;
-        reportHtml += `<table class="grade-table"><thead><tr><th>Criterion</th><th>Awarded Grade</th><th>Justification</th></tr></thead><tbody>`;
-        appraisal.Grades.forEach(g => { reportHtml += `<tr><td><strong>${g.criterion}</strong></td><td>${g.score}</td><td>${g.justification}</td></tr>`; });
+        let totalAwarded = 0;
+        let totalMax = 0;
+
+        // Note: Using inline styles here heavily so it renders correctly when exported to MS Word
+        let reportHtml = `<div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #5e4b73; padding-bottom: 10px;">
+                            <h1 style="color: #3a2a4a; margin: 0; font-family: Arial, sans-serif;">Official Appraisal Report</h1>
+                          </div>`;
+        
+        reportHtml += `<table style="width: 100%; margin-bottom: 25px; font-family: Arial, sans-serif;">
+                        <tr>
+                            <td><strong>Name / Author(s):</strong> ${studentName}</td>
+                            <td style="text-align: right;"><strong>Section:</strong> ${studentSection}</td>
+                        </tr>
+                       </table>`;
+
+        reportHtml += `<table border="1" style="width: 100%; border-collapse: collapse; margin-bottom: 25px; font-family: Arial, sans-serif;">
+                        <thead>
+                            <tr>
+                                <th style="padding: 12px; background-color: #3a2a4a; color: white; text-align: left;">Criterion</th>
+                                <th style="padding: 12px; background-color: #3a2a4a; color: white; text-align: center; width: 15%;">Grade</th>
+                                <th style="padding: 12px; background-color: #3a2a4a; color: white; text-align: left;">Justification</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
+        
+        appraisal.Grades.forEach(g => { 
+            let aw = Number(g.score_awarded) || 0;
+            let mx = Number(g.max_possible) || 0;
+            totalAwarded += aw; 
+            totalMax += mx;
+            reportHtml += `<tr>
+                <td style="padding: 12px; vertical-align: top;"><strong>${g.criterion}</strong></td>
+                <td style="padding: 12px; text-align: center; vertical-align: top; color: #3a2a4a;"><strong>${aw} / ${mx}</strong></td>
+                <td style="padding: 12px; vertical-align: top;">${g.justification}</td>
+            </tr>`; 
+        });
         reportHtml += `</tbody></table>`;
         
-        reportHtml += `<div class="feedback-box"><h4>✓ Identified Strong Points</h4><ul>`;
-        appraisal.StrongPoints.forEach(sp => reportHtml += `<li>${sp}</li>`);
+        let percentage = totalMax > 0 ? ((totalAwarded / totalMax) * 100).toFixed(1) : 0;
+        
+        reportHtml += `<div style="background-color: #e3dee8; padding: 15px; border-radius: 6px; text-align: center; margin-bottom: 25px; font-family: Arial, sans-serif; border: 1px solid #cac2d6;">
+                        <h2 style="margin: 0; color: #3a2a4a;">Final Score: ${totalAwarded} / ${totalMax} &nbsp; | &nbsp; ${percentage}%</h2>
+                       </div>`;
+
+        reportHtml += `<div style="background-color: #fbfafc; border-left: 5px solid #5e4b73; padding: 20px; margin-bottom: 20px; font-family: Arial, sans-serif;">
+                        <h3 style="margin-top: 0; color: #3a2a4a;">✓ Identified Strong Points</h3><ul style="margin-bottom: 0;">`;
+        appraisal.StrongPoints.forEach(sp => reportHtml += `<li style="margin-bottom: 8px;">${sp}</li>`);
         reportHtml += `</ul></div>`;
         
-        reportHtml += `<div class="feedback-box" style="border-left-color: #8c3b4a;"><h4 style="color: #8c3b4a;">⚠ Areas for Improvement</h4><ul>`;
-        appraisal.Improvements.forEach(imp => reportHtml += `<li>${imp}</li>`);
+        reportHtml += `<div style="background-color: #fbfafc; border-left: 5px solid #8c3b4a; padding: 20px; font-family: Arial, sans-serif;">
+                        <h3 style="margin-top: 0; color: #8c3b4a;">⚠ Areas for Improvement</h3><ul style="margin-bottom: 0;">`;
+        appraisal.Improvements.forEach(imp => reportHtml += `<li style="margin-bottom: 8px;">${imp}</li>`);
         reportHtml += `</ul></div>`;
 
         document.getElementById('report-render').innerHTML = reportHtml;
         document.getElementById('output-area').style.display = "block";
+        document.getElementById('export-btn').style.display = "block";
         document.getElementById('output-area').scrollIntoView({ behavior: 'smooth' });
         
         saveToHistory(reportHtml);
@@ -532,6 +594,32 @@ async function generateAppraisal() {
         document.getElementById('loading').style.display = "none";
         document.getElementById('genBtn').disabled = false;
     }
+}
+
+// ==========================================
+// 7. EXPORT TO WORD FUNCTIONALITY
+// ==========================================
+function exportToWord() {
+    const reportHTML = document.getElementById('report-render').innerHTML;
+    
+    // Wrap the HTML in standard MS Word tags so Word knows how to format it
+    const preHtml = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+    <head><meta charset='utf-8'><title>Export HTML To Doc</title></head><body>`;
+    const postHtml = "</body></html>";
+    
+    const html = preHtml + reportHTML + postHtml;
+    const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    
+    const studentName = document.getElementById('student-name').value.trim() || "Student";
+    const cleanName = studentName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    
+    const downloadLink = document.createElement("a");
+    document.body.appendChild(downloadLink);
+    downloadLink.href = url;
+    downloadLink.download = `Appraisal_Report_${cleanName}.doc`;
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
 }
 </script>
 </body>
