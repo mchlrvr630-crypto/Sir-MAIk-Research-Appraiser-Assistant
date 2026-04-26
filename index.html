@@ -455,7 +455,7 @@ document.getElementById('builder-table').addEventListener('paste', function(e) {
 });
 
 // ==========================================
-// 6. GEMINI AI GENERATION LOGIC (DIRECT TARGET)
+// 6. GEMINI AI DIAGNOSTIC GENERATION
 // ==========================================
 async function generateAppraisal() {
     const errorBox = document.getElementById('error-box');
@@ -482,49 +482,50 @@ async function generateAppraisal() {
     let rubricString = `Rubric Columns: ${rubricData.headers.join(' | ')}\n`;
     validRows.forEach((r, i) => rubricString += `Criterion ${i+1}: ${r.join(' | ')}\n`);
 
-    const promptText = `Act as an Expert Academic Research Reviewer. 
-    Appraise the paper based ONLY on the provided rubric. 
-    
-    CRITICAL INSTRUCTION: You MUST output ONLY raw JSON. Do not wrap the JSON in markdown blocks (e.g. do not use \`\`\`json). Just return the raw curly braces.
-    
+    const promptText = `Act as an Expert Academic Research Reviewer. Appraise the paper based ONLY on the provided rubric. 
+    CRITICAL INSTRUCTION: You MUST output ONLY raw JSON. Do not wrap the JSON in markdown blocks.
     === RUBRIC ===\n${rubricString}\n=== RESEARCH PAPER TEXT ===\n${paperText.substring(0, 30000)}
-    
     JSON Structure: { "Grades": [ {"criterion": "...", "score": "...", "justification": "..."} ], "StrongPoints": ["..."], "Improvements": ["..."] }`;
 
     try {
-        // Target the modern, correct endpoint directly
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
         
         const response = await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-                contents: [{ parts: [{ text: promptText }] }]
-            })
+            body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] })
         });
         
         const data = await response.json();
         
-        // Expose the TRUE error if it fails
         if (data.error) {
-            if (data.error.message.includes("API key not valid")) {
-                localStorage.removeItem("gamai_key");
-                throw new Error("<b>Invalid API Key.</b> Your key was rejected. Click 'Reset API Key' or Generate to enter a new one.");
+            // DIAGNOSTIC INTERCEPT: If model is not found, fetch the list of available models!
+            if (data.error.message.includes("not found") || data.error.message.includes("ListModels")) {
+                const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+                const listRes = await fetch(listUrl);
+                const listData = await listRes.json();
+                
+                let available = "<span style='color:red;'>None found (Your key is restricted)</span>";
+                
+                if (listData.models && listData.models.length > 0) {
+                    available = listData.models
+                        .filter(m => m.supportedGenerationMethods.includes("generateContent"))
+                        .map(m => m.name.replace('models/', ''))
+                        .join(", ");
+                }
+                
+                throw new Error(`<b>API Key Permission Error:</b> Your key cannot access 'gemini-1.5-flash'. <br><br><b>Models your key CAN access:</b> ${available}<br><br><i>If the list is empty, you need to generate a new key at <b>aistudio.google.com</b> and ensure it is in a new project. Click 'Reset API Key' at the top right to clear your old one.</i>`);
             }
+            
             throw new Error(`<b>Gemini API Error:</b> ${data.error.message}`);
         }
 
-        let aiText = data.candidates[0].content.parts[0].text;
-        
-        // Clean up text to ensure JSON parsability
-        aiText = aiText.replace(/```json/g, '').replace(/```/g, '').trim();
+        let aiText = data.candidates[0].content.parts[0].text.replace(/```json/g, '').replace(/```/g, '').trim();
         const appraisal = JSON.parse(aiText);
         
         let reportHtml = `<div class="report-header">Official Appraisal Report</div>`;
         reportHtml += `<table class="grade-table"><thead><tr><th>Criterion</th><th>Awarded Grade</th><th>Justification</th></tr></thead><tbody>`;
-        appraisal.Grades.forEach(g => {
-            reportHtml += `<tr><td><strong>${g.criterion}</strong></td><td>${g.score}</td><td>${g.justification}</td></tr>`;
-        });
+        appraisal.Grades.forEach(g => { reportHtml += `<tr><td><strong>${g.criterion}</strong></td><td>${g.score}</td><td>${g.justification}</td></tr>`; });
         reportHtml += `</tbody></table>`;
         
         reportHtml += `<div class="feedback-box"><h4>✓ Identified Strong Points</h4><ul>`;
@@ -542,7 +543,6 @@ async function generateAppraisal() {
         saveToHistory(reportHtml);
 
     } catch (err) {
-        // Output the actual error securely
         errorBox.innerHTML = err.message;
         errorBox.style.display = "block";
     } finally {
