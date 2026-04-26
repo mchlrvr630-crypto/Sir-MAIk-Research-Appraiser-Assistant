@@ -13,17 +13,19 @@
         :root { 
             --bg-page: #f4f2f7; 
             --bg-panel: #ffffff; 
-            --primary: #3a2a4a; /* Deep Slate Purple */
-            --primary-light: #e3dee8; /* Ash Lavender */
-            --accent: #5e4b73; /* Muted Plum */
+            --primary: #3a2a4a; 
+            --primary-light: #e3dee8; 
+            --accent: #5e4b73; 
             --text-main: #2b2533;
             --text-muted: #5d5566;
             --border: #cac2d6;
             --btn-add: #463b52;
-            --btn-del: #8c3b4a; /* Muted Red-Purple */
+            --btn-del: #8c3b4a; 
             --btn-action: #4a3859;
-            --btn-clear: #c44f65; /* Brighter red for clear actions */
-            --btn-warn: #e6a817; /* Yellow for Reset API */
+            --btn-clear: #c44f65; 
+            --btn-warn: #e6a817; 
+            --btn-save: #2f4858;
+            --btn-load: #4b6b55;
         }
 
         body { 
@@ -79,11 +81,13 @@
         input:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(94, 75, 115, 0.15); background: white;}
         
         /* Table Builder Styles */
-        .table-controls { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; align-items: center;}
-        .btn-ctrl { padding: 8px 15px; border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: bold; transition: 0.2s;}
+        .table-controls { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; align-items: center; background: var(--primary-light); padding: 12px; border-radius: 8px;}
+        .btn-ctrl { padding: 8px 15px; border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: bold; transition: 0.2s; font-size: 0.9rem;}
         .btn-add { background: var(--btn-add); } .btn-add:hover { background: #2f2738; }
         .btn-rem { background: var(--btn-del); } .btn-rem:hover { background: #6b2b37; }
-        .btn-clear-rubric { background: var(--btn-clear); margin-left: auto;} .btn-clear-rubric:hover { background: #a13d50; }
+        .btn-clear-rubric { background: var(--btn-clear); } .btn-clear-rubric:hover { background: #a13d50; }
+        .btn-save { background: var(--btn-save); margin-left: auto;} .btn-save:hover { background: #1b2a33; }
+        .btn-load { background: var(--btn-load); } .btn-load:hover { background: #324a3a; }
         
         .builder-wrapper { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 5px; }
         .builder-tip { font-size: 0.85rem; color: var(--accent); margin-bottom: 20px; font-weight: 600; }
@@ -103,11 +107,6 @@
         }
         .generate-btn:hover { background: var(--primary); box-shadow: 0 6px 15px rgba(58, 42, 74, 0.3);}
         .generate-btn:disabled { background: #a39eb0; cursor: not-allowed; box-shadow: none;}
-
-        .db-controls { display: flex; gap: 10px; margin-top: 20px; padding: 15px; background: var(--primary-light); border-radius: 8px;}
-        .db-btn { flex: 1; padding: 10px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; color: white;}
-        .btn-export { background: #2f4858; } .btn-export:hover { background: #1b2a33; }
-        .btn-import { background: #4b6b55; } .btn-import:hover { background: #324a3a; }
         
         /* History Sidebar */
         .history-sidebar { 
@@ -154,20 +153,18 @@
     </div>
 
     <div class="content">
-        <div class="db-controls">
-            <span style="flex: 2; align-content: center; font-weight: bold; color: var(--primary);">💾 Rubric Template Management:</span>
-            <button class="db-btn btn-export" onclick="exportRubric()">Export Rubric (.json)</button>
-            <input type="file" id="import-file" style="display:none" accept=".json" onchange="importRubric(event)">
-            <button class="db-btn btn-import" onclick="document.getElementById('import-file').click()">Import Rubric (.json)</button>
-        </div>
 
         <div class="section-title">I. Rubric Encoder</div>
         <div class="table-controls">
             <button class="btn-ctrl btn-add" onclick="addRow()">+ Add Row</button>
-            <button class="btn-ctrl btn-rem" onclick="removeRow()">- Remove Row</button>
             <button class="btn-ctrl btn-add" onclick="addCol()">+ Add Column</button>
+            <button class="btn-ctrl btn-rem" onclick="removeRow()">- Remove Row</button>
             <button class="btn-ctrl btn-rem" onclick="removeCol()">- Remove Column</button>
-            <button class="btn-ctrl btn-clear-rubric" onclick="clearRubric()">🗑️ Clear Rubric</button>
+            <button class="btn-ctrl btn-clear-rubric" onclick="clearRubric()">🗑️ Clear</button>
+            
+            <button class="btn-ctrl btn-save" onclick="exportRubric()">💾 Save Rubric (.json)</button>
+            <input type="file" id="import-file" style="display:none" accept=".json" onchange="importRubric(event)">
+            <button class="btn-ctrl btn-load" onclick="document.getElementById('import-file').click()">📂 Load Rubric (.json)</button>
         </div>
         
         <div class="builder-wrapper">
@@ -192,7 +189,7 @@
                 </tbody>
             </table>
         </div>
-        <div class="builder-tip">💡 Tip: Copy cells from Excel/Sheets and paste directly into the table above! Data auto-saves as you type.</div>
+        <div class="builder-tip">💡 Tip: You can type, copy-paste text normally into cells, or paste an entire copied table from Excel directly into the grid.</div>
 
         <div class="section-title">II. Research Paper Upload</div>
         <div class="input-box">
@@ -354,7 +351,7 @@ function clearHistory() {
 }
 
 // ==========================================
-// 3. RUBRIC JSON EXPORT / IMPORT
+// 3. RUBRIC JSON EXPORT(SAVE) / IMPORT(LOAD)
 // ==========================================
 function extractRubricData() {
     const theadInputs = document.querySelectorAll('#builder-head input');
@@ -412,7 +409,7 @@ function importRubric(event) {
             });
             
             saveState(); 
-            alert("Rubric Template imported successfully!");
+            alert("Rubric Template loaded successfully!");
             document.getElementById('import-file').value = ""; 
         } catch(err) {
             alert("Invalid JSON rubric file.");
@@ -464,7 +461,7 @@ document.getElementById('paper-file').addEventListener('change', async function(
 });
 
 // ==========================================
-// 5. UI AND TABLE BUILDER LOGIC
+// 5. UI AND TABLE BUILDER LOGIC (FIXED PASTE)
 // ==========================================
 function addRow() {
     const tbody = document.getElementById('builder-body');
@@ -516,6 +513,63 @@ function clearRubric() {
     saveState();
 }
 
+// FIXED: Now allows standard text pasting into a single cell, 
+// while preserving the ability to paste full grids from Excel.
+document.getElementById('builder-table').addEventListener('paste', function(e) {
+    if (e.target.tagName === 'INPUT') {
+        let pasteData = (e.clipboardData || window.clipboardData).getData('text');
+        
+        // Check if the pasted data looks like a grid (has tabs separating cells)
+        if (pasteData.includes('\t') || pasteData.includes('\n')) {
+            e.preventDefault(); // Stop standard single-cell paste
+            
+            let rows = pasteData.split(/\r?\n/);
+            let startTd = e.target.closest('td') || e.target.closest('th');
+            if (!startTd) return;
+            
+            let startTr = startTd.parentElement;
+            let isHeader = startTd.tagName === 'TH';
+            let container = startTr.parentElement;
+            
+            let startRowIdx = Array.from(container.children).indexOf(startTr);
+            let startColIdx = Array.from(startTr.children).indexOf(startTd);
+
+            if(!isHeader) {
+                rows.forEach((row, rIdx) => {
+                    if (!row.trim() && rIdx === rows.length - 1) return; 
+                    let cells = row.split('\t');
+                    
+                    let targetTr = container.children[startRowIdx + rIdx];
+                    if (!targetTr) {
+                        addRow();
+                        targetTr = container.children[startRowIdx + rIdx];
+                    }
+                    
+                    cells.forEach((cell, cIdx) => {
+                        let targetTd = targetTr.children[startColIdx + cIdx];
+                        if (!targetTd) {
+                            addCol();
+                            targetTd = targetTr.children[startColIdx + cIdx];
+                        }
+                        if (targetTd) {
+                            let input = targetTd.querySelector('input');
+                            if (input) {
+                                input.value = cell.trim();
+                                input.removeEventListener('input', saveState);
+                                input.addEventListener('input', saveState);
+                            }
+                        }
+                    });
+                });
+                saveState();
+            }
+        }
+        // If it does NOT include tabs or new lines, it ignores the grid logic 
+        // and just lets your browser paste the text normally into the input box!
+    }
+});
+
+
 // ==========================================
 // 6. GEMINI AI GENERATION LOGIC
 // ==========================================
@@ -556,7 +610,6 @@ async function generateAppraisal() {
     JSON Structure: { "Grades": [ {"criterion": "...", "score": "...", "justification": "..."} ], "StrongPoints": ["..."], "Improvements": ["..."] }`;
 
     try {
-        // Using 1.5-flash as it is highly stable for the free tier
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
         
         const response = await fetch(url, {
