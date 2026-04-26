@@ -22,6 +22,7 @@
             --btn-add: #463b52;
             --btn-del: #8c3b4a; /* Muted Red-Purple */
             --btn-action: #4a3859;
+            --btn-clear: #c44f65; /* Brighter red for clear actions */
         }
 
         body { 
@@ -73,10 +74,11 @@
         input:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(94, 75, 115, 0.15); background: white;}
         
         /* Table Builder Styles */
-        .table-controls { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;}
+        .table-controls { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; align-items: center;}
         .btn-ctrl { padding: 8px 15px; border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: bold; transition: 0.2s;}
         .btn-add { background: var(--btn-add); } .btn-add:hover { background: #2f2738; }
         .btn-rem { background: var(--btn-del); } .btn-rem:hover { background: #6b2b37; }
+        .btn-clear-rubric { background: var(--btn-clear); margin-left: auto;} .btn-clear-rubric:hover { background: #a13d50; }
         
         .builder-wrapper { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 5px; }
         .builder-tip { font-size: 0.85rem; color: var(--accent); margin-bottom: 20px; font-weight: 600; }
@@ -158,6 +160,7 @@
             <button class="btn-ctrl btn-rem" onclick="removeRow()">- Remove Row</button>
             <button class="btn-ctrl btn-add" onclick="addCol()">+ Add Column</button>
             <button class="btn-ctrl btn-rem" onclick="removeCol()">- Remove Column</button>
+            <button class="btn-ctrl btn-clear-rubric" onclick="clearRubric()">🗑️ Clear Rubric</button>
         </div>
         
         <div class="builder-wrapper">
@@ -214,7 +217,6 @@
 // ==========================================
 // 1. PDF.js WORKER CONFIGURATION
 // ==========================================
-// PDF.js requires a worker script to process files in the background without freezing the browser
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
 // ==========================================
@@ -245,7 +247,6 @@ function initDB() {
     });
 }
 
-// Save Current Form State
 function saveState() {
     if(!db) return;
     const tableData = document.getElementById('builder-table').innerHTML;
@@ -257,7 +258,6 @@ function saveState() {
     store.put(paperText, 'currentPaper');
 }
 
-// Load Saved Form State
 function loadState() {
     const transaction = db.transaction(['appState'], 'readonly');
     const store = transaction.objectStore('appState');
@@ -265,7 +265,6 @@ function loadState() {
     store.get('currentTable').onsuccess = (e) => {
         if(e.target.result) {
             document.getElementById('builder-table').innerHTML = e.target.result;
-            // Re-attach listeners to inputs since innerHTML overwrites them
             document.querySelectorAll('#builder-table input').forEach(inp => inp.addEventListener('input', saveState));
         }
     };
@@ -275,7 +274,6 @@ function loadState() {
     };
 }
 
-// Save Output to History
 function saveToHistory(reportHtml) {
     const transaction = db.transaction(['history'], 'readwrite');
     const store = transaction.objectStore('history');
@@ -288,26 +286,24 @@ function saveToHistory(reportHtml) {
     
     store.add(newItem);
     
-    // Keep only latest 5
     const countReq = store.getAll();
     countReq.onsuccess = () => {
         let items = countReq.result;
         if(items.length > 5) {
             items.sort((a,b) => a.id - b.id);
-            store.delete(items[0].id); // Delete oldest
+            store.delete(items[0].id);
         }
         loadHistory();
     };
 }
 
-// Load History Sidebar
 function loadHistory() {
     const transaction = db.transaction(['history'], 'readonly');
     const store = transaction.objectStore('history');
     const request = store.getAll();
     
     request.onsuccess = () => {
-        const history = request.result.sort((a,b) => b.id - a.id); // Newest first
+        const history = request.result.sort((a,b) => b.id - a.id);
         const list = document.getElementById('history-list');
         list.innerHTML = "";
         
@@ -341,7 +337,6 @@ function clearHistory() {
     };
 }
 
-// Export Database to JSON
 function exportDatabase() {
     const data = { appState: {}, history: [] };
     const transaction = db.transaction(['appState', 'history'], 'readonly');
@@ -366,7 +361,6 @@ function exportDatabase() {
     };
 }
 
-// Import Database from JSON
 function importDatabase(event) {
     const file = event.target.files[0];
     if(!file) return;
@@ -398,9 +392,7 @@ function importDatabase(event) {
     reader.readAsText(file);
 }
 
-// Initialize DB on load
 document.addEventListener("DOMContentLoaded", initDB);
-
 
 // ==========================================
 // 3. FILE PARSING LOGIC (.TXT, .PDF, .DOCX)
@@ -453,7 +445,6 @@ document.getElementById('paper-file').addEventListener('change', async function(
     }
 });
 
-
 // ==========================================
 // 4. UI AND TABLE BUILDER LOGIC
 // ==========================================
@@ -504,7 +495,31 @@ function removeCol() {
     }
 }
 
-// Excel Paste Listener
+// NEW: Function to clear the rubric entirely back to a default state
+function clearRubric() {
+    if(!confirm("Are you sure you want to clear the entire rubric table?")) return;
+    
+    document.getElementById('builder-head').innerHTML = `
+        <th><input type="text" value="Criteria" oninput="saveState()"></th>
+        <th><input type="text" value="Excellent (4)" oninput="saveState()"></th>
+        <th><input type="text" value="Good (3)" oninput="saveState()"></th>
+        <th><input type="text" value="Fair (2)" oninput="saveState()"></th>
+        <th><input type="text" value="Poor (1)" oninput="saveState()"></th>
+    `;
+    
+    document.getElementById('builder-body').innerHTML = `
+        <tr>
+            <td><input type="text" placeholder="Methodology" oninput="saveState()"></td>
+            <td><input type="text" placeholder="Flawless design" oninput="saveState()"></td>
+            <td><input type="text" placeholder="Minor issues" oninput="saveState()"></td>
+            <td><input type="text" placeholder="Major flaws" oninput="saveState()"></td>
+            <td><input type="text" placeholder="Invalid" oninput="saveState()"></td>
+        </tr>
+    `;
+    
+    saveState();
+}
+
 document.getElementById('builder-table').addEventListener('paste', function(e) {
     if (e.target.tagName === 'INPUT') {
         e.preventDefault();
@@ -569,7 +584,6 @@ function extractRubricData() {
     return { headers, rows };
 }
 
-
 // ==========================================
 // 5. GEMINI AI GENERATION LOGIC
 // ==========================================
@@ -597,7 +611,6 @@ async function generateAppraisal() {
     document.getElementById('output-area').style.display = "none";
     document.getElementById('genBtn').disabled = true;
 
-    // Stringify Rubric
     let rubricString = `Rubric Columns (Grading Scale): ${rubricData.headers.join(' | ')}\n`;
     rubricData.rows.forEach((r, i) => rubricString += `Criterion ${i+1}: ${r.join(' | ')}\n`);
 
@@ -626,7 +639,8 @@ async function generateAppraisal() {
     IMPORTANT: Return ONLY a valid JSON object. Do not include markdown like \`\`\`json.`;
 
     try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        // FIXED ENDPOINT: Changed from gemini-1.5-flash to gemini-2.0-flash to resolve the deprecation/not-found error.
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
         
         const response = await fetch(url, {
             method: "POST",
@@ -638,16 +652,18 @@ async function generateAppraisal() {
         });
         
         const data = await response.json();
-        if(data.error) throw new Error(data.error.message);
+        
+        if(data.error) {
+             // If gemini-2.0-flash is somehow restricted, we throw the specific API error message
+             throw new Error(data.error.message);
+        }
 
         let aiText = data.candidates[0].content.parts[0].text;
         aiText = aiText.replace(/```json/g, '').replace(/```/g, '').trim();
         const appraisal = JSON.parse(aiText);
         
-        // Build the Report HTML
         let reportHtml = `<div class="report-header">Official Appraisal Report</div>`;
         
-        // 1. Grades Table
         reportHtml += `<table class="grade-table">
             <thead>
                 <tr>
@@ -667,21 +683,18 @@ async function generateAppraisal() {
         });
         reportHtml += `</tbody></table>`;
         
-        // 2. Strong Points
         reportHtml += `<div class="feedback-box">
             <h4>✓ Identified Strong Points</h4>
             <ul>`;
         appraisal.StrongPoints.forEach(sp => reportHtml += `<li>${sp}</li>`);
         reportHtml += `</ul></div>`;
         
-        // 3. Improvements
         reportHtml += `<div class="feedback-box" style="border-left-color: #8c3b4a;">
             <h4 style="color: #8c3b4a;">⚠ Areas for Improvement</h4>
             <ul>`;
         appraisal.Improvements.forEach(imp => reportHtml += `<li>${imp}</li>`);
         reportHtml += `</ul></div>`;
 
-        // Render and Save
         document.getElementById('report-render').innerHTML = reportHtml;
         document.getElementById('output-area').style.display = "block";
         document.getElementById('output-area').scrollIntoView({ behavior: 'smooth' });
@@ -689,8 +702,11 @@ async function generateAppraisal() {
         saveToHistory(reportHtml);
 
     } catch (err) {
-        alert("Generation Error: " + err.message + "\n\nPlease check your file size or API key.");
-        if(err.message.includes("API key")) localStorage.removeItem("gamai_key");
+        alert("Generation Error: " + err.message + "\n\nPlease check your API key, or confirm the model string is supported by your API tier.");
+        // We only remove the key if the error explicitly mentions authentication/API key issues
+        if(err.message.toLowerCase().includes("api key") || err.message.toLowerCase().includes("auth")) {
+             localStorage.removeItem("gamai_key");
+        }
     } finally {
         document.getElementById('loading').style.display = "none";
         document.getElementById('genBtn').disabled = false;
