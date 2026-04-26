@@ -83,6 +83,11 @@
         }
         input:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(94, 75, 115, 0.15); background: white;}
         
+        /* Image Previews */
+        .image-preview-area { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+        .image-preview-area img { width: 90px; height: 90px; object-fit: cover; border-radius: 8px; border: 2px solid var(--accent); box-shadow: 0 4px 10px rgba(0,0,0,0.1); transition: 0.2s;}
+        .image-preview-area img:hover { transform: scale(1.05); }
+
         /* Table Builder Styles */
         .table-controls { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; align-items: center; background: var(--primary-light); padding: 12px; border-radius: 8px;}
         .btn-ctrl { padding: 8px 15px; border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: bold; transition: 0.2s; font-size: 0.9rem;}
@@ -201,18 +206,25 @@
         </div>
         <div class="builder-tip">💡 Tip: Include the point value in your headers (e.g. "Excellent (4)") so the AI can extract the maximum possible score accurately.</div>
 
-        <div class="section-title">II. Research Paper Upload</div>
+        <div class="section-title">II. Research Material Input</div>
         <div class="input-box">
-            <label>Option A: Upload Research Paper (.pdf, .docx, .txt)</label>
+            <label>Option A: Upload Document (.pdf, .docx, .txt)</label>
             <input type="file" id="paper-file" accept=".txt, .pdf, .docx, application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="background: white;">
         </div>
+        
         <div class="input-box">
-            <label>Option B: Paste Research Paper Text Here</label>
-            <textarea id="paper-text" rows="8" placeholder="Wait for the file to extract, or paste the full text of the research paper directly here..." oninput="saveState()"></textarea>
+            <label>Option B: Paste Research Text Here</label>
+            <textarea id="paper-text" rows="8" placeholder="Wait for the file to extract, or paste the text directly here..." oninput="saveState()"></textarea>
+        </div>
+
+        <div class="input-box">
+            <label>Option C: Add Associated Images (Graphs, Charts, Scanned Pages)</label>
+            <input type="file" id="image-upload" accept="image/png, image/jpeg, image/webp" multiple style="background: white;">
+            <div class="image-preview-area" id="image-preview-container"></div>
         </div>
 
         <button onclick="generateAppraisal()" id="genBtn" class="generate-btn">📄 Generate Appraisal Report</button>
-        <div id="loading" class="loading">⚙️ Analyzing paper against rubrics. Formulating grades and feedback...</div>
+        <div id="loading" class="loading">⚙️ Analyzing text and images against rubrics. Formulating grades and feedback...</div>
         <div id="error-box" class="error-msg"></div>
 
         <div id="output-area">
@@ -383,7 +395,7 @@ function importRubric(event) {
 document.addEventListener("DOMContentLoaded", initDB);
 
 // ==========================================
-// 4. FILE PARSING LOGIC
+// 4. FILE PARSING LOGIC (TEXT & DOCUMENTS)
 // ==========================================
 document.getElementById('paper-file').addEventListener('change', async function(e) {
     const file = e.target.files[0];
@@ -409,7 +421,43 @@ document.getElementById('paper-file').addEventListener('change', async function(
 });
 
 // ==========================================
-// 5. UI AND TABLE BUILDER LOGIC
+// 5. IMAGE UPLOAD & BASE64 CONVERSION
+// ==========================================
+let sessionImages = []; // Stores Base64 image data for the API request
+
+document.getElementById('image-upload').addEventListener('change', function(e) {
+    const files = e.target.files;
+    const container = document.getElementById('image-preview-container');
+    
+    // Clear previous images if they upload a new batch
+    container.innerHTML = '';
+    sessionImages = []; 
+    
+    if(!files || files.length === 0) return;
+
+    for(let file of files) {
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            const base64String = evt.target.result;
+            
+            // Push formatted data for Gemini payload
+            sessionImages.push({
+                mimeType: file.type,
+                data: base64String.split(',')[1] // Strip out "data:image/jpeg;base64,"
+            });
+
+            // Display thumbnail
+            const img = document.createElement('img');
+            img.src = base64String;
+            img.title = file.name;
+            container.appendChild(img);
+        };
+        reader.readAsDataURL(file);
+    }
+});
+
+// ==========================================
+// 6. UI AND TABLE BUILDER LOGIC
 // ==========================================
 function addRow() {
     const tbody = document.getElementById('builder-body');
@@ -436,6 +484,11 @@ function clearRubric() {
     document.getElementById('builder-head').innerHTML = `<th><input type="text" value="Criteria" oninput="saveState()"></th><th><input type="text" value="Excellent (4)" oninput="saveState()"></th><th><input type="text" value="Good (3)" oninput="saveState()"></th><th><input type="text" value="Fair (2)" oninput="saveState()"></th><th><input type="text" value="Poor (1)" oninput="saveState()"></th>`;
     document.getElementById('builder-body').innerHTML = `<tr><td><input type="text" placeholder="Methodology" oninput="saveState()"></td><td><input type="text" placeholder="Flawless design" oninput="saveState()"></td><td><input type="text" placeholder="Minor issues" oninput="saveState()"></td><td><input type="text" placeholder="Major flaws" oninput="saveState()"></td><td><input type="text" placeholder="Invalid" oninput="saveState()"></td></tr>`;
     saveState();
+    
+    // Clear images too
+    document.getElementById('image-upload').value = "";
+    document.getElementById('image-preview-container').innerHTML = "";
+    sessionImages = [];
 }
 
 document.getElementById('builder-table').addEventListener('paste', function(e) {
@@ -472,7 +525,7 @@ document.getElementById('builder-table').addEventListener('paste', function(e) {
 });
 
 // ==========================================
-// 6. GEMINI AI GENERATION LOGIC
+// 7. GEMINI AI GENERATION LOGIC (TEXT + VISION)
 // ==========================================
 async function generateAppraisal() {
     const errorBox = document.getElementById('error-box');
@@ -490,7 +543,11 @@ async function generateAppraisal() {
     const studentName = document.getElementById('student-name').value.trim() || "N/A";
     const studentSection = document.getElementById('student-section').value.trim() || "N/A";
 
-    if(!paperText) { alert("Please upload or paste the Research Paper text."); return; }
+    if(!paperText && sessionImages.length === 0) { 
+        alert("Please provide some research content (Text or Images) to appraise."); 
+        return; 
+    }
+    
     let validRows = rubricData.rows.filter(r => r.some(cell => cell !== ""));
     if(validRows.length === 0) { alert("Please encode criteria into the rubric table."); return; }
 
@@ -502,14 +559,27 @@ async function generateAppraisal() {
     let rubricString = `Rubric Columns: ${rubricData.headers.join(' | ')}\n`;
     validRows.forEach((r, i) => rubricString += `Criterion ${i+1}: ${r.join(' | ')}\n`);
 
-    const promptText = `Act as an Expert Academic Research Reviewer. Appraise the paper based ONLY on the provided rubric. 
+    const promptText = `Act as an Expert Academic Research Reviewer. Appraise the provided research material (text and/or images) based ONLY on the provided rubric. Evaluate the text alongside any attached charts, diagrams, or scanned images.
     CRITICAL INSTRUCTION: You MUST output ONLY raw JSON. Do not wrap the JSON in markdown blocks. Extract the numerical score from the rubric headers.
-    === RUBRIC ===\n${rubricString}\n=== RESEARCH PAPER TEXT ===\n${paperText.substring(0, 30000)}
+    === RUBRIC ===\n${rubricString}\n=== RESEARCH TEXT ===\n${paperText ? paperText.substring(0, 30000) : "No text provided. Rely on attached images."}
     JSON Structure: { 
         "Grades": [ {"criterion": "...", "score_awarded": <number>, "max_possible": <number>, "justification": "..."} ], 
         "StrongPoints": ["..."], 
         "Improvements": ["..."] 
     }`;
+
+    // Construct the Multimodal Payload
+    let partsArray = [{ text: promptText }];
+    
+    // Add images if they exist
+    sessionImages.forEach(img => {
+        partsArray.push({
+            inlineData: {
+                mimeType: img.mimeType,
+                data: img.data
+            }
+        });
+    });
 
     try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
@@ -517,7 +587,7 @@ async function generateAppraisal() {
         const response = await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] })
+            body: JSON.stringify({ contents: [{ parts: partsArray }] })
         });
         
         const data = await response.json();
@@ -529,7 +599,6 @@ async function generateAppraisal() {
         let totalAwarded = 0;
         let totalMax = 0;
 
-        // Note: Using inline styles here heavily so it renders correctly when exported to MS Word
         let reportHtml = `<div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #5e4b73; padding-bottom: 10px;">
                             <h1 style="color: #3a2a4a; margin: 0; font-family: Arial, sans-serif;">Official Appraisal Report</h1>
                           </div>`;
@@ -597,12 +666,11 @@ async function generateAppraisal() {
 }
 
 // ==========================================
-// 7. EXPORT TO WORD FUNCTIONALITY
+// 8. EXPORT TO WORD FUNCTIONALITY
 // ==========================================
 function exportToWord() {
     const reportHTML = document.getElementById('report-render').innerHTML;
     
-    // Wrap the HTML in standard MS Word tags so Word knows how to format it
     const preHtml = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
     <head><meta charset='utf-8'><title>Export HTML To Doc</title></head><body>`;
     const postHtml = "</body></html>";
