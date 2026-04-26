@@ -423,13 +423,12 @@ document.getElementById('paper-file').addEventListener('change', async function(
 // ==========================================
 // 5. IMAGE UPLOAD & BASE64 CONVERSION
 // ==========================================
-let sessionImages = []; // Stores Base64 image data for the API request
+let sessionImages = []; 
 
 document.getElementById('image-upload').addEventListener('change', function(e) {
     const files = e.target.files;
     const container = document.getElementById('image-preview-container');
     
-    // Clear previous images if they upload a new batch
     container.innerHTML = '';
     sessionImages = []; 
     
@@ -439,14 +438,11 @@ document.getElementById('image-upload').addEventListener('change', function(e) {
         const reader = new FileReader();
         reader.onload = function(evt) {
             const base64String = evt.target.result;
-            
-            // Push formatted data for Gemini payload
             sessionImages.push({
                 mimeType: file.type,
-                data: base64String.split(',')[1] // Strip out "data:image/jpeg;base64,"
+                data: base64String.split(',')[1] 
             });
 
-            // Display thumbnail
             const img = document.createElement('img');
             img.src = base64String;
             img.title = file.name;
@@ -485,7 +481,6 @@ function clearRubric() {
     document.getElementById('builder-body').innerHTML = `<tr><td><input type="text" placeholder="Methodology" oninput="saveState()"></td><td><input type="text" placeholder="Flawless design" oninput="saveState()"></td><td><input type="text" placeholder="Minor issues" oninput="saveState()"></td><td><input type="text" placeholder="Major flaws" oninput="saveState()"></td><td><input type="text" placeholder="Invalid" oninput="saveState()"></td></tr>`;
     saveState();
     
-    // Clear images too
     document.getElementById('image-upload').value = "";
     document.getElementById('image-preview-container').innerHTML = "";
     sessionImages = [];
@@ -525,7 +520,7 @@ document.getElementById('builder-table').addEventListener('paste', function(e) {
 });
 
 // ==========================================
-// 7. GEMINI AI GENERATION LOGIC (TEXT + VISION)
+// 7. STRICT AI GENERATION (ANTI-HALLUCINATION)
 // ==========================================
 async function generateAppraisal() {
     const errorBox = document.getElementById('error-box');
@@ -560,18 +555,24 @@ async function generateAppraisal() {
     validRows.forEach((r, i) => rubricString += `Criterion ${i+1}: ${r.join(' | ')}\n`);
 
     const promptText = `Act as an Expert Academic Research Reviewer. Appraise the provided research material (text and/or images) based ONLY on the provided rubric. Evaluate the text alongside any attached charts, diagrams, or scanned images.
+    
     CRITICAL INSTRUCTION: You MUST output ONLY raw JSON. Do not wrap the JSON in markdown blocks. Extract the numerical score from the rubric headers.
+    
+    CRITICAL ANTI-HALLUCINATION RULES: 
+    1. Base your appraisal STRICTLY on the provided text and images. 
+    2. If a specific methodology, data point, or criterion is missing from the research material, YOU MUST explicitly state 'Information missing from document' in the justification and award a score of 0. 
+    3. DO NOT assume, infer, or invent information that is not explicitly written in the provided material.
+    
     === RUBRIC ===\n${rubricString}\n=== RESEARCH TEXT ===\n${paperText ? paperText.substring(0, 30000) : "No text provided. Rely on attached images."}
+    
     JSON Structure: { 
-        "Grades": [ {"criterion": "...", "score_awarded": <number>, "max_possible": <number>, "justification": "..."} ], 
+        "Grades": [ {"criterion": "...", "justification": "...", "score_awarded": <number>, "max_possible": <number>} ], 
         "StrongPoints": ["..."], 
         "Improvements": ["..."] 
     }`;
 
-    // Construct the Multimodal Payload
     let partsArray = [{ text: promptText }];
     
-    // Add images if they exist
     sessionImages.forEach(img => {
         partsArray.push({
             inlineData: {
@@ -587,7 +588,15 @@ async function generateAppraisal() {
         const response = await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ contents: [{ parts: partsArray }] })
+            body: JSON.stringify({ 
+                contents: [{ parts: partsArray }],
+                // Added Generation Config to strictly limit creativity and hallucinations
+                generationConfig: {
+                    temperature: 0.1,
+                    topK: 1,
+                    topP: 0.1
+                }
+            })
         });
         
         const data = await response.json();
