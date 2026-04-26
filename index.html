@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GamAI Research Appraiser Assistant</title>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.21/mammoth.browser.min.js"></script>
+
+    <style>
+        /* "Manly Purple" Slate & Plum Palette */
+        :root { 
+            --bg-page: #f4f2f7; 
+            --bg-panel: #ffffff; 
+            --primary: #3a2a4a; /* Deep Slate Purple */
+            --primary-light: #e3dee8; /* Ash Lavender */
+            --accent: #5e4b73; /* Muted Plum */
+            --text-main: #2b2533;
+            --text-muted: #5d5566;
+            --border: #cac2d6;
+            --btn-add: #463b52;
+            --btn-del: #8c3b4a; /* Muted Red-Purple */
+            --btn-action: #4a3859;
+        }
+
+        body { 
+            font-family: 'Segoe UI', Tahoma, sans-serif; 
+            background: var(--bg-page); 
+            padding: 20px; 
+            color: var(--text-main); 
+            display: flex; 
+            gap: 20px; 
+            justify-content: center; 
+            line-height: 1.6;
+        }
+        
+        .container { 
+            flex: 1; 
+            max-width: 1100px; 
+            background: var(--bg-panel); 
+            border-radius: 12px; 
+            box-shadow: 0 10px 40px rgba(58, 42, 74, 0.1); 
+            border-top: 6px solid var(--primary); 
+            padding-bottom: 30px; 
+        }
+        
+        .header { padding: 25px; text-align: center; border-bottom: 1px solid var(--border); }
+        .header h1 { margin: 0; color: var(--primary); font-weight: 800; letter-spacing: -0.5px;}
+        .header p { color: var(--text-muted); margin-top: 5px; font-size: 1.05rem; }
+        
+        .content { padding: 30px; }
+        
+        .section-title { 
+            font-weight: bold; 
+            color: var(--primary); 
+            border-bottom: 3px solid var(--primary-light); 
+            display: inline-block; 
+            margin-bottom: 20px; 
+            text-transform: uppercase; 
+            margin-top: 10px; 
+            font-size: 1.1rem;
+            letter-spacing: 1px;
+        }
+        
+        .input-box { display: flex; flex-direction: column; margin-bottom: 20px; }
+        label { font-weight: 600; margin-bottom: 8px; font-size: 0.95rem; color: var(--text-main); }
+        
+        input, textarea { 
+            padding: 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 1rem; 
+            transition: 0.2s; font-family: inherit; background: #faf9fc;
+        }
+        input:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(94, 75, 115, 0.15); background: white;}
+        
+        /* Table Builder Styles */
+        .table-controls { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;}
+        .btn-ctrl { padding: 8px 15px; border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: bold; transition: 0.2s;}
+        .btn-add { background: var(--btn-add); } .btn-add:hover { background: #2f2738; }
+        .btn-rem { background: var(--btn-del); } .btn-rem:hover { background: #6b2b37; }
+        
+        .builder-wrapper { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 5px; }
+        .builder-tip { font-size: 0.85rem; color: var(--accent); margin-bottom: 20px; font-weight: 600; }
+        
+        #builder-table { border-collapse: collapse; width: 100%; min-width: 600px; }
+        #builder-table th, #builder-table td { padding: 8px; border: 1px solid var(--border); }
+        #builder-table th { background: var(--primary-light); color: var(--primary);}
+        #builder-table input { width: 100%; box-sizing: border-box; border: 1px solid transparent; background: transparent; padding: 6px; }
+        #builder-table input:focus { background: white; border: 1px solid var(--accent); }
+        #builder-table th input { font-weight: bold; text-align: center; }
+
+        /* Action Buttons */
+        .generate-btn { 
+            width: 100%; padding: 18px; background: var(--btn-action); color: white; border: none; 
+            border-radius: 8px; font-size: 1.1rem; font-weight: bold; cursor: pointer; transition: 0.3s; 
+            box-shadow: 0 4px 10px rgba(58, 42, 74, 0.2); margin-top: 10px;
+        }
+        .generate-btn:hover { background: var(--primary); box-shadow: 0 6px 15px rgba(58, 42, 74, 0.3);}
+        .generate-btn:disabled { background: #a39eb0; cursor: not-allowed; box-shadow: none;}
+
+        .db-controls { display: flex; gap: 10px; margin-top: 20px; padding: 15px; background: var(--primary-light); border-radius: 8px;}
+        .db-btn { flex: 1; padding: 10px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; color: white;}
+        .btn-export { background: #2f4858; } .btn-export:hover { background: #1b2a33; }
+        .btn-import { background: #4b6b55; } .btn-import:hover { background: #324a3a; }
+        
+        /* History Sidebar */
+        .history-sidebar { 
+            width: 320px; background: var(--bg-panel); border-radius: 12px; 
+            box-shadow: 0 10px 40px rgba(58, 42, 74, 0.1); padding: 20px; height: fit-content; 
+            border-top: 6px solid var(--accent); 
+        }
+        .history-sidebar h3 { color: var(--primary); border-bottom: 2px solid var(--primary-light); padding-bottom: 10px; margin-top: 0; font-size: 1.1rem; text-transform: uppercase;}
+        .history-item { 
+            background: var(--bg-page); border: 1px solid var(--border); padding: 12px; 
+            margin-bottom: 10px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; transition: 0.2s; 
+        }
+        .history-item:hover { border-color: var(--accent); background: var(--primary-light); }
+        .clear-btn { background: var(--btn-del); color: white; padding: 10px; margin-top: 10px; font-size: 0.9rem; border: none; border-radius: 6px; width: 100%; cursor: pointer; }
+
+        .loading { text-align: center; display: none; padding: 20px; font-weight: bold; color: var(--primary); font-size: 1.1rem; }
+
+        /* Output Formatting */
+        #output-area { margin-top: 40px; display: none; padding-top: 30px; border-top: 3px solid var(--primary-light); }
+        
+        .report-card { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.03);}
+        .report-header { text-align: center; color: var(--primary); margin-bottom: 25px; font-size: 1.5rem; font-weight: bold; text-transform: uppercase; border-bottom: 2px solid var(--accent); padding-bottom: 10px;}
+        
+        .grade-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+        .grade-table th, .grade-table td { padding: 12px; border: 1px solid var(--border); text-align: left; vertical-align: top;}
+        .grade-table th { background: var(--primary); color: white; }
+        .grade-table td:nth-child(2) { font-weight: bold; color: var(--primary); text-align: center; width: 15%;}
+        
+        .feedback-box { background: #fbfafc; border-left: 5px solid var(--accent); padding: 20px; margin-bottom: 20px; border-radius: 0 6px 6px 0;}
+        .feedback-box h4 { margin-top: 0; color: var(--primary); margin-bottom: 10px; font-size: 1.1rem;}
+        .feedback-box ul { margin-top: 0; padding-left: 20px;}
+        .feedback-box li { margin-bottom: 8px;}
+        
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>Research Appraiser Assistant</h1>
+        <p>Automated Grading, Justification, and Feedback Engine</p>
+    </div>
+
+    <div class="content">
+        <div class="db-controls">
+            <span style="flex: 2; align-content: center; font-weight: bold; color: var(--primary);">💾 Database Management:</span>
+            <button class="db-btn btn-export" onclick="exportDatabase()">Export Data (.json)</button>
+            <input type="file" id="import-file" style="display:none" accept=".json" onchange="importDatabase(event)">
+            <button class="db-btn btn-import" onclick="document.getElementById('import-file').click()">Import Data (.json)</button>
+        </div>
+
+        <div class="section-title">I. Rubric Encoder</div>
+        <div class="table-controls">
+            <button class="btn-ctrl btn-add" onclick="addRow()">+ Add Row</button>
+            <button class="btn-ctrl btn-rem" onclick="removeRow()">- Remove Row</button>
+            <button class="btn-ctrl btn-add" onclick="addCol()">+ Add Column</button>
+            <button class="btn-ctrl btn-rem" onclick="removeCol()">- Remove Column</button>
+        </div>
+        
+        <div class="builder-wrapper">
+            <table id="builder-table">
+                <thead>
+                    <tr id="builder-head">
+                        <th><input type="text" value="Criteria" oninput="saveState()"></th>
+                        <th><input type="text" value="Excellent (4)" oninput="saveState()"></th>
+                        <th><input type="text" value="Good (3)" oninput="saveState()"></th>
+                        <th><input type="text" value="Fair (2)" oninput="saveState()"></th>
+                        <th><input type="text" value="Poor (1)" oninput="saveState()"></th>
+                    </tr>
+                </thead>
+                <tbody id="builder-body">
+                    <tr>
+                        <td><input type="text" placeholder="Methodology" oninput="saveState()"></td>
+                        <td><input type="text" placeholder="Flawless design" oninput="saveState()"></td>
+                        <td><input type="text" placeholder="Minor issues" oninput="saveState()"></td>
+                        <td><input type="text" placeholder="Major flaws" oninput="saveState()"></td>
+                        <td><input type="text" placeholder="Invalid" oninput="saveState()"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="builder-tip">💡 Tip: Copy cells from Excel/Sheets and paste directly into the table above! Data auto-saves as you type.</div>
+
+        <div class="section-title">II. Research Paper Upload</div>
+        <div class="input-box">
+            <label>Option A: Upload Research Paper (.pdf, .docx, .txt)</label>
+            <input type="file" id="paper-file" accept=".txt, .pdf, .docx, application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="background: white;">
+        </div>
+        <div class="input-box">
+            <label>Option B: Paste Research Paper Text Here</label>
+            <textarea id="paper-text" rows="8" placeholder="Wait for the file to extract, or paste the full text of the research paper directly here..." oninput="saveState()"></textarea>
+        </div>
+
+        <button onclick="generateAppraisal()" id="genBtn" class="generate-btn">📄 Generate Appraisal Report</button>
+        <div id="loading" class="loading">⚙️ Analyzing paper against rubrics. Formulating grades and feedback...</div>
+
+        <div id="output-area">
+            <div class="report-card" id="report-render">
+                </div>
+        </div>
+    </div>
+</div>
+
+<div class="history-sidebar">
+    <h3>Appraisal History</h3>
+    <div id="history-list"></div>
+    <button class="clear-btn" onclick="clearHistory()">🗑️ Clear History</button>
+</div>
+
+<script>
+// ==========================================
+// 1. PDF.js WORKER CONFIGURATION
+// ==========================================
+// PDF.js requires a worker script to process files in the background without freezing the browser
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+// ==========================================
+// 2. INDEXEDDB PERSISTENCE LAYER
+// ==========================================
+const DB_NAME = 'GamAI_AppraiserDB';
+const DB_VERSION = 1;
+let db;
+
+function initDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        
+        request.onerror = (e) => reject("IndexedDB Error: " + e.target.errorCode);
+        
+        request.onupgradeneeded = (e) => {
+            db = e.target.result;
+            if(!db.objectStoreNames.contains('appState')) db.createObjectStore('appState');
+            if(!db.objectStoreNames.contains('history')) db.createObjectStore('history', { keyPath: 'id' });
+        };
+        
+        request.onsuccess = (e) => {
+            db = e.target.result;
+            loadState();
+            loadHistory();
+            resolve();
+        };
+    });
+}
+
+// Save Current Form State
+function saveState() {
+    if(!db) return;
+    const tableData = document.getElementById('builder-table').innerHTML;
+    const paperText = document.getElementById('paper-text').value;
+    
+    const transaction = db.transaction(['appState'], 'readwrite');
+    const store = transaction.objectStore('appState');
+    store.put(tableData, 'currentTable');
+    store.put(paperText, 'currentPaper');
+}
+
+// Load Saved Form State
+function loadState() {
+    const transaction = db.transaction(['appState'], 'readonly');
+    const store = transaction.objectStore('appState');
+    
+    store.get('currentTable').onsuccess = (e) => {
+        if(e.target.result) {
+            document.getElementById('builder-table').innerHTML = e.target.result;
+            // Re-attach listeners to inputs since innerHTML overwrites them
+            document.querySelectorAll('#builder-table input').forEach(inp => inp.addEventListener('input', saveState));
+        }
+    };
+    
+    store.get('currentPaper').onsuccess = (e) => {
+        if(e.target.result) document.getElementById('paper-text').value = e.target.result;
+    };
+}
+
+// Save Output to History
+function saveToHistory(reportHtml) {
+    const transaction = db.transaction(['history'], 'readwrite');
+    const store = transaction.objectStore('history');
+    
+    const newItem = {
+        id: Date.now(),
+        date: new Date().toLocaleString(),
+        report: reportHtml
+    };
+    
+    store.add(newItem);
+    
+    // Keep only latest 5
+    const countReq = store.getAll();
+    countReq.onsuccess = () => {
+        let items = countReq.result;
+        if(items.length > 5) {
+            items.sort((a,b) => a.id - b.id);
+            store.delete(items[0].id); // Delete oldest
+        }
+        loadHistory();
+    };
+}
+
+// Load History Sidebar
+function loadHistory() {
+    const transaction = db.transaction(['history'], 'readonly');
+    const store = transaction.objectStore('history');
+    const request = store.getAll();
+    
+    request.onsuccess = () => {
+        const history = request.result.sort((a,b) => b.id - a.id); // Newest first
+        const list = document.getElementById('history-list');
+        list.innerHTML = "";
+        
+        if(history.length === 0) {
+            list.innerHTML = "<p style='color:var(--text-muted); font-size:0.9rem;'>No history yet.</p>";
+            return;
+        }
+        
+        history.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'history-item';
+            div.innerHTML = `<strong>Appraisal Report</strong><br><small style="color:var(--text-muted);">${item.date}</small>`;
+            div.onclick = () => {
+                document.getElementById('report-render').innerHTML = item.report;
+                document.getElementById('output-area').style.display = "block";
+                document.getElementById('output-area').scrollIntoView({ behavior: 'smooth' });
+            };
+            list.appendChild(div);
+        });
+    };
+}
+
+function clearHistory() {
+    if(!confirm("Clear all appraisal history?")) return;
+    const transaction = db.transaction(['history'], 'readwrite');
+    transaction.objectStore('history').clear();
+    transaction.oncomplete = () => {
+        document.getElementById('report-render').innerHTML = '';
+        document.getElementById('output-area').style.display = 'none';
+        loadHistory();
+    };
+}
+
+// Export Database to JSON
+function exportDatabase() {
+    const data = { appState: {}, history: [] };
+    const transaction = db.transaction(['appState', 'history'], 'readonly');
+    
+    transaction.objectStore('appState').getAllKeys().onsuccess = (e) => {
+        const keys = e.target.result;
+        transaction.objectStore('appState').getAll().onsuccess = (ev) => {
+            const values = ev.target.result;
+            keys.forEach((k, i) => data.appState[k] = values[i]);
+            
+            transaction.objectStore('history').getAll().onsuccess = (ev2) => {
+                data.history = ev2.target.result;
+                
+                const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = "GamAI_Appraiser_Backup.json";
+                a.click();
+            };
+        };
+    };
+}
+
+// Import Database from JSON
+function importDatabase(event) {
+    const file = event.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            const transaction = db.transaction(['appState', 'history'], 'readwrite');
+            
+            const stateStore = transaction.objectStore('appState');
+            stateStore.clear();
+            for(const [key, value] of Object.entries(data.appState)) {
+                stateStore.put(value, key);
+            }
+            
+            const historyStore = transaction.objectStore('history');
+            historyStore.clear();
+            data.history.forEach(item => historyStore.put(item));
+            
+            transaction.oncomplete = () => {
+                alert("Database imported successfully!");
+                loadState();
+                loadHistory();
+            };
+        } catch(err) {
+            alert("Invalid JSON backup file.");
+        }
+    };
+    reader.readAsText(file);
+}
+
+// Initialize DB on load
+document.addEventListener("DOMContentLoaded", initDB);
+
+
+// ==========================================
+// 3. FILE PARSING LOGIC (.TXT, .PDF, .DOCX)
+// ==========================================
+document.getElementById('paper-file').addEventListener('change', async function(e) {
+    const file = e.target.files[0];
+    if(!file) return;
+
+    const textArea = document.getElementById('paper-text');
+    textArea.value = "Extracting text from document, please wait...";
+    
+    const extension = file.name.split('.').pop().toLowerCase();
+
+    try {
+        if (extension === 'txt') {
+            const reader = new FileReader();
+            reader.onload = (evt) => { 
+                textArea.value = evt.target.result; 
+                saveState();
+            };
+            reader.readAsText(file);
+        } 
+        else if (extension === 'pdf') {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+            let fullText = '';
+            
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(item => item.str).join(' ');
+                fullText += pageText + '\n\n';
+            }
+            textArea.value = fullText;
+            saveState();
+        } 
+        else if (extension === 'docx') {
+            const arrayBuffer = await file.arrayBuffer();
+            const result = await mammoth.extractRawText({arrayBuffer: arrayBuffer});
+            textArea.value = result.value;
+            saveState();
+        } 
+        else {
+            textArea.value = "";
+            alert("Unsupported file format. Please upload .txt, .pdf, or .docx");
+        }
+    } catch (err) {
+        textArea.value = "";
+        alert("Error reading file: " + err.message);
+    }
+});
+
+
+// ==========================================
+// 4. UI AND TABLE BUILDER LOGIC
+// ==========================================
+function addRow() {
+    const tbody = document.getElementById('builder-body');
+    const cols = document.getElementById('builder-head').children.length;
+    const tr = document.createElement('tr');
+    for(let i=0; i<cols; i++) {
+        const td = document.createElement('td');
+        td.innerHTML = `<input type="text" placeholder="..." oninput="saveState()">`;
+        tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+    saveState();
+}
+
+function removeRow() {
+    const tbody = document.getElementById('builder-body');
+    if(tbody.children.length > 1) {
+        tbody.removeChild(tbody.lastElementChild);
+        saveState();
+    }
+}
+
+function addCol() {
+    const thead = document.getElementById('builder-head');
+    const tbody = document.getElementById('builder-body');
+    
+    const th = document.createElement('th');
+    th.innerHTML = `<input type="text" placeholder="New Level" oninput="saveState()">`;
+    thead.appendChild(th);
+    
+    for(let row of tbody.children) {
+        const td = document.createElement('td');
+        td.innerHTML = `<input type="text" placeholder="..." oninput="saveState()">`;
+        row.appendChild(td);
+    }
+    saveState();
+}
+
+function removeCol() {
+    const thead = document.getElementById('builder-head');
+    const tbody = document.getElementById('builder-body');
+    if(thead.children.length > 1) {
+        thead.removeChild(thead.lastElementChild);
+        for(let row of tbody.children) row.removeChild(row.lastElementChild);
+        saveState();
+    }
+}
+
+// Excel Paste Listener
+document.getElementById('builder-table').addEventListener('paste', function(e) {
+    if (e.target.tagName === 'INPUT') {
+        e.preventDefault();
+        let pasteData = e.clipboardData.getData('text');
+        let rows = pasteData.split(/\r?\n/);
+        
+        let startTd = e.target.closest('td') || e.target.closest('th');
+        if (!startTd) return;
+        
+        let startTr = startTd.parentElement;
+        let isHeader = startTd.tagName === 'TH';
+        let container = startTr.parentElement;
+        
+        let startRowIdx = Array.from(container.children).indexOf(startTr);
+        let startColIdx = Array.from(startTr.children).indexOf(startTd);
+
+        if(!isHeader) {
+            rows.forEach((row, rIdx) => {
+                if (!row.trim() && rIdx === rows.length - 1) return; 
+                let cells = row.split('\t');
+                
+                let targetTr = container.children[startRowIdx + rIdx];
+                if (!targetTr) {
+                    addRow();
+                    targetTr = container.children[startRowIdx + rIdx];
+                }
+                
+                cells.forEach((cell, cIdx) => {
+                    let targetTd = targetTr.children[startColIdx + cIdx];
+                    if (!targetTd) {
+                        addCol();
+                        targetTd = targetTr.children[startColIdx + cIdx];
+                    }
+                    if (targetTd) {
+                        let input = targetTd.querySelector('input');
+                        if (input) {
+                            input.value = cell.trim();
+                            input.removeEventListener('input', saveState);
+                            input.addEventListener('input', saveState);
+                        }
+                    }
+                });
+            });
+            saveState();
+        }
+    }
+});
+
+function extractRubricData() {
+    const theadInputs = document.querySelectorAll('#builder-head input');
+    const tbodyRows = document.querySelectorAll('#builder-body tr');
+    
+    let headers = Array.from(theadInputs).map(inp => inp.value.trim() || 'Level');
+    let rows = [];
+    
+    tbodyRows.forEach(row => {
+        let rowData = [];
+        row.querySelectorAll('input').forEach(inp => rowData.push(inp.value.trim()));
+        if(rowData.some(val => val !== '')) rows.push(rowData);
+    });
+
+    return { headers, rows };
+}
+
+
+// ==========================================
+// 5. GEMINI AI GENERATION LOGIC
+// ==========================================
+async function generateAppraisal() {
+    let apiKey = localStorage.getItem("gamai_key");
+    if (!apiKey) {
+        apiKey = prompt("Enter your Gemini API Key:");
+        if (apiKey) localStorage.setItem("gamai_key", apiKey);
+        else return;
+    }
+
+    const paperText = document.getElementById('paper-text').value.trim();
+    const rubricData = extractRubricData();
+
+    if(!paperText) {
+        alert("Please upload or paste the Research Paper text.");
+        return;
+    }
+    if(rubricData.rows.length === 0) {
+        alert("Please encode criteria into the rubric table.");
+        return;
+    }
+
+    document.getElementById('loading').style.display = "block";
+    document.getElementById('output-area').style.display = "none";
+    document.getElementById('genBtn').disabled = true;
+
+    // Stringify Rubric
+    let rubricString = `Rubric Columns (Grading Scale): ${rubricData.headers.join(' | ')}\n`;
+    rubricData.rows.forEach((r, i) => rubricString += `Criterion ${i+1}: ${r.join(' | ')}\n`);
+
+    const promptText = `Act as an Expert Academic Research Reviewer. 
+    
+    I am providing you with a Research Paper and a strict Rubric.
+    Your task is to appraise the paper based ONLY on the provided rubric.
+
+    === RUBRIC ===
+    ${rubricString}
+
+    === RESEARCH PAPER TEXT ===
+    ${paperText.substring(0, 30000)}
+
+    CRITICAL INSTRUCTIONS:
+    Output STRICTLY in JSON format with exactly 3 keys: "Grades", "StrongPoints", "Improvements".
+    
+    1. "Grades": An array of objects. For EACH Criterion in the rubric, provide:
+       - "criterion": The name of the criterion being evaluated.
+       - "score": The specific grade/level awarded (e.g., "Excellent (4)", "Good"). Choose this strictly based on the rubric levels provided.
+       - "justification": A detailed paragraph explaining exactly WHY the paper received this score based on the text.
+       
+    2. "StrongPoints": An array of 3-5 strings detailing the overall best aspects of the paper.
+    3. "Improvements": An array of 3-5 strings suggesting specific actions the author must take to improve the paper.
+
+    IMPORTANT: Return ONLY a valid JSON object. Do not include markdown like \`\`\`json.`;
+
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        
+        const response = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+                contents: [{ parts: [{ text: promptText }] }],
+                generationConfig: { responseMimeType: "application/json" }
+            })
+        });
+        
+        const data = await response.json();
+        if(data.error) throw new Error(data.error.message);
+
+        let aiText = data.candidates[0].content.parts[0].text;
+        aiText = aiText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const appraisal = JSON.parse(aiText);
+        
+        // Build the Report HTML
+        let reportHtml = `<div class="report-header">Official Appraisal Report</div>`;
+        
+        // 1. Grades Table
+        reportHtml += `<table class="grade-table">
+            <thead>
+                <tr>
+                    <th>Criterion</th>
+                    <th>Awarded Grade</th>
+                    <th>Justification</th>
+                </tr>
+            </thead>
+            <tbody>`;
+            
+        appraisal.Grades.forEach(g => {
+            reportHtml += `<tr>
+                <td><strong>${g.criterion}</strong></td>
+                <td>${g.score}</td>
+                <td>${g.justification}</td>
+            </tr>`;
+        });
+        reportHtml += `</tbody></table>`;
+        
+        // 2. Strong Points
+        reportHtml += `<div class="feedback-box">
+            <h4>✓ Identified Strong Points</h4>
+            <ul>`;
+        appraisal.StrongPoints.forEach(sp => reportHtml += `<li>${sp}</li>`);
+        reportHtml += `</ul></div>`;
+        
+        // 3. Improvements
+        reportHtml += `<div class="feedback-box" style="border-left-color: #8c3b4a;">
+            <h4 style="color: #8c3b4a;">⚠ Areas for Improvement</h4>
+            <ul>`;
+        appraisal.Improvements.forEach(imp => reportHtml += `<li>${imp}</li>`);
+        reportHtml += `</ul></div>`;
+
+        // Render and Save
+        document.getElementById('report-render').innerHTML = reportHtml;
+        document.getElementById('output-area').style.display = "block";
+        document.getElementById('output-area').scrollIntoView({ behavior: 'smooth' });
+        
+        saveToHistory(reportHtml);
+
+    } catch (err) {
+        alert("Generation Error: " + err.message + "\n\nPlease check your file size or API key.");
+        if(err.message.includes("API key")) localStorage.removeItem("gamai_key");
+    } finally {
+        document.getElementById('loading').style.display = "none";
+        document.getElementById('genBtn').disabled = false;
+    }
+}
+</script>
+</body>
+</html>
