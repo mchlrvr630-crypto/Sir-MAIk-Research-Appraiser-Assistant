@@ -455,7 +455,7 @@ document.getElementById('builder-table').addEventListener('paste', function(e) {
 });
 
 // ==========================================
-// 6. GEMINI AI GENERATION LOGIC (WITH FALLBACK)
+// 6. GEMINI AI GENERATION LOGIC (FIXED JSON MODE)
 // ==========================================
 async function generateAppraisal() {
     const errorBox = document.getElementById('error-box');
@@ -483,11 +483,15 @@ async function generateAppraisal() {
     validRows.forEach((r, i) => rubricString += `Criterion ${i+1}: ${r.join(' | ')}\n`);
 
     const promptText = `Act as an Expert Academic Research Reviewer. 
-    Appraise the paper based ONLY on the provided rubric. Output STRICTLY in JSON format.
+    Appraise the paper based ONLY on the provided rubric. 
+    
+    CRITICAL INSTRUCTION: You MUST output ONLY raw JSON. Do not wrap the JSON in markdown blocks (e.g. do not use \`\`\`json). Just return the raw curly braces.
+    
     === RUBRIC ===\n${rubricString}\n=== RESEARCH PAPER TEXT ===\n${paperText.substring(0, 30000)}
+    
     JSON Structure: { "Grades": [ {"criterion": "...", "score": "...", "justification": "..."} ], "StrongPoints": ["..."], "Improvements": ["..."] }`;
 
-    const modelsToTry = ["gemini-1.5-flash-latest", "gemini-1.5-pro-latest", "gemini-pro"];
+    const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro", "gemini-pro"];
     let successfulData = null;
     let lastErrorMessage = "";
 
@@ -498,35 +502,34 @@ async function generateAppraisal() {
             const response = await fetch(url, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
+                // REMOVED 'responseMimeType' strictness to allow full fallback compatibility!
                 body: JSON.stringify({ 
-                    contents: [{ parts: [{ text: promptText }] }],
-                    generationConfig: { responseMimeType: "application/json" }
+                    contents: [{ parts: [{ text: promptText }] }]
                 })
             });
             
             const data = await response.json();
             
             if (data.error) {
-                // If it's a quota issue, stop immediately and throw.
                 if (data.error.message.includes("limit: 0") || data.error.message.includes("quota")) {
                     localStorage.removeItem("gamai_key"); 
                     throw new Error("<b>Quota Exceeded (Limit: 0).</b> Your API Key has been restricted from the free tier. <br><br><b>How to fix:</b> Go to Google AI Studio, click 'Create API Key', and select <b>'Create API key in NEW project'</b>. Your bad key has been automatically cleared. Click Generate again to enter your new key.");
                 }
-                // Otherwise (like model not found), log the error and try the next model in the array
                 lastErrorMessage = data.error.message;
                 continue; 
             }
             
-            // If we succeed, capture data and break the loop
             successfulData = data;
             break;
         }
 
         if (!successfulData) {
-            throw new Error(`Failed to generate content with all fallback models. Last error: ${lastErrorMessage}`);
+            throw new Error(`Failed to generate content. Last error: ${lastErrorMessage}`);
         }
 
         let aiText = successfulData.candidates[0].content.parts[0].text;
+        
+        // Clean up text to ensure JSON parsability just in case the AI adds markdown anyway
         aiText = aiText.replace(/```json/g, '').replace(/```/g, '').trim();
         const appraisal = JSON.parse(aiText);
         
