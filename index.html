@@ -23,6 +23,7 @@
             --btn-del: #8c3b4a; /* Muted Red-Purple */
             --btn-action: #4a3859;
             --btn-clear: #c44f65; /* Brighter red for clear actions */
+            --btn-warn: #e6a817; /* Yellow for Reset API */
         }
 
         body { 
@@ -44,11 +45,15 @@
             box-shadow: 0 10px 40px rgba(58, 42, 74, 0.1); 
             border-top: 6px solid var(--primary); 
             padding-bottom: 30px; 
+            position: relative;
         }
         
         .header { padding: 25px; text-align: center; border-bottom: 1px solid var(--border); }
         .header h1 { margin: 0; color: var(--primary); font-weight: 800; letter-spacing: -0.5px;}
         .header p { color: var(--text-muted); margin-top: 5px; font-size: 1.05rem; }
+
+        .api-reset-btn { position: absolute; top: 20px; right: 20px; background: var(--btn-warn); border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: bold; color: #333; transition: 0.2s;}
+        .api-reset-btn:hover { background: #d49a15; }
         
         .content { padding: 30px; }
         
@@ -119,6 +124,7 @@
         .clear-btn { background: var(--btn-del); color: white; padding: 10px; margin-top: 10px; font-size: 0.9rem; border: none; border-radius: 6px; width: 100%; cursor: pointer; }
 
         .loading { text-align: center; display: none; padding: 20px; font-weight: bold; color: var(--primary); font-size: 1.1rem; }
+        .error-msg { background: #ffebee; color: #c62828; padding: 15px; border-radius: 6px; border-left: 5px solid #c62828; margin-top: 20px; display: none;}
 
         /* Output Formatting */
         #output-area { margin-top: 40px; display: none; padding-top: 30px; border-top: 3px solid var(--primary-light); }
@@ -141,6 +147,7 @@
 <body>
 
 <div class="container">
+    <button class="api-reset-btn" onclick="resetApiKey()">⚙️ Reset API Key</button>
     <div class="header">
         <h1>Research Appraiser Assistant</h1>
         <p>Automated Grading, Justification, and Feedback Engine</p>
@@ -199,6 +206,7 @@
 
         <button onclick="generateAppraisal()" id="genBtn" class="generate-btn">📄 Generate Appraisal Report</button>
         <div id="loading" class="loading">⚙️ Analyzing paper against rubrics. Formulating grades and feedback...</div>
+        <div id="error-box" class="error-msg"></div>
 
         <div id="output-area">
             <div class="report-card" id="report-render">
@@ -214,6 +222,14 @@
 </div>
 
 <script>
+// ==========================================
+// API KEY MANAGEMENT
+// ==========================================
+function resetApiKey() {
+    localStorage.removeItem("gamai_key");
+    alert("API Key cleared! You will be prompted to enter a new one the next time you generate.");
+}
+
 // ==========================================
 // 1. PDF.js WORKER CONFIGURATION
 // ==========================================
@@ -375,7 +391,6 @@ function importRubric(event) {
             const data = JSON.parse(e.target.result);
             if(!data.headers || !data.rows) throw new Error("Invalid format");
             
-            // Rebuild Header
             const thead = document.getElementById('builder-head');
             thead.innerHTML = "";
             data.headers.forEach(h => {
@@ -384,24 +399,20 @@ function importRubric(event) {
                 thead.appendChild(th);
             });
             
-            // Rebuild Body
             const tbody = document.getElementById('builder-body');
             tbody.innerHTML = "";
             data.rows.forEach(r => {
                 const tr = document.createElement('tr');
                 r.forEach(cell => {
                     const td = document.createElement('td');
-                    // We use value attributes so it shows up as text in the input
                     td.innerHTML = `<input type="text" value="${cell}" oninput="saveState()">`;
                     tr.appendChild(td);
                 });
                 tbody.appendChild(tr);
             });
             
-            saveState(); // Trigger IndexedDB to save new state
+            saveState(); 
             alert("Rubric Template imported successfully!");
-            
-            // Reset the file input so you can select the same file again later if needed
             document.getElementById('import-file').value = ""; 
         } catch(err) {
             alert("Invalid JSON rubric file.");
@@ -414,7 +425,7 @@ function importRubric(event) {
 document.addEventListener("DOMContentLoaded", initDB);
 
 // ==========================================
-// 4. FILE PARSING LOGIC (.TXT, .PDF, .DOCX)
+// 4. FILE PARSING LOGIC
 // ==========================================
 document.getElementById('paper-file').addEventListener('change', async function(e) {
     const file = e.target.files[0];
@@ -428,39 +439,27 @@ document.getElementById('paper-file').addEventListener('change', async function(
     try {
         if (extension === 'txt') {
             const reader = new FileReader();
-            reader.onload = (evt) => { 
-                textArea.value = evt.target.result; 
-                saveState();
-            };
+            reader.onload = (evt) => { textArea.value = evt.target.result; saveState(); };
             reader.readAsText(file);
-        } 
-        else if (extension === 'pdf') {
+        } else if (extension === 'pdf') {
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
             let fullText = '';
-            
             for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
-                const pageText = textContent.items.map(item => item.str).join(' ');
-                fullText += pageText + '\n\n';
+                fullText += textContent.items.map(item => item.str).join(' ') + '\n\n';
             }
-            textArea.value = fullText;
-            saveState();
-        } 
-        else if (extension === 'docx') {
+            textArea.value = fullText; saveState();
+        } else if (extension === 'docx') {
             const arrayBuffer = await file.arrayBuffer();
             const result = await mammoth.extractRawText({arrayBuffer: arrayBuffer});
-            textArea.value = result.value;
-            saveState();
-        } 
-        else {
-            textArea.value = "";
-            alert("Unsupported file format. Please upload .txt, .pdf, or .docx");
+            textArea.value = result.value; saveState();
+        } else {
+            textArea.value = ""; alert("Unsupported file format.");
         }
     } catch (err) {
-        textArea.value = "";
-        alert("Error reading file: " + err.message);
+        textArea.value = ""; alert("Error reading file: " + err.message);
     }
 });
 
@@ -471,36 +470,20 @@ function addRow() {
     const tbody = document.getElementById('builder-body');
     const cols = document.getElementById('builder-head').children.length;
     const tr = document.createElement('tr');
-    for(let i=0; i<cols; i++) {
-        const td = document.createElement('td');
-        td.innerHTML = `<input type="text" placeholder="..." oninput="saveState()">`;
-        tr.appendChild(td);
-    }
-    tbody.appendChild(tr);
-    saveState();
+    for(let i=0; i<cols; i++) tr.innerHTML += `<td><input type="text" placeholder="..." oninput="saveState()"></td>`;
+    tbody.appendChild(tr); saveState();
 }
 
 function removeRow() {
     const tbody = document.getElementById('builder-body');
-    if(tbody.children.length > 1) {
-        tbody.removeChild(tbody.lastElementChild);
-        saveState();
-    }
+    if(tbody.children.length > 1) { tbody.removeChild(tbody.lastElementChild); saveState(); }
 }
 
 function addCol() {
     const thead = document.getElementById('builder-head');
     const tbody = document.getElementById('builder-body');
-    
-    const th = document.createElement('th');
-    th.innerHTML = `<input type="text" placeholder="New Level" oninput="saveState()">`;
-    thead.appendChild(th);
-    
-    for(let row of tbody.children) {
-        const td = document.createElement('td');
-        td.innerHTML = `<input type="text" placeholder="..." oninput="saveState()">`;
-        row.appendChild(td);
-    }
+    thead.innerHTML += `<th><input type="text" placeholder="New Level" oninput="saveState()"></th>`;
+    for(let row of tbody.children) row.innerHTML += `<td><input type="text" placeholder="..." oninput="saveState()"></td>`;
     saveState();
 }
 
@@ -515,16 +498,13 @@ function removeCol() {
 }
 
 function clearRubric() {
-    if(!confirm("Are you sure you want to clear the entire rubric table?")) return;
-    
+    if(!confirm("Clear entire rubric?")) return;
     document.getElementById('builder-head').innerHTML = `
         <th><input type="text" value="Criteria" oninput="saveState()"></th>
         <th><input type="text" value="Excellent (4)" oninput="saveState()"></th>
         <th><input type="text" value="Good (3)" oninput="saveState()"></th>
         <th><input type="text" value="Fair (2)" oninput="saveState()"></th>
-        <th><input type="text" value="Poor (1)" oninput="saveState()"></th>
-    `;
-    
+        <th><input type="text" value="Poor (1)" oninput="saveState()"></th>`;
     document.getElementById('builder-body').innerHTML = `
         <tr>
             <td><input type="text" placeholder="Methodology" oninput="saveState()"></td>
@@ -532,86 +512,30 @@ function clearRubric() {
             <td><input type="text" placeholder="Minor issues" oninput="saveState()"></td>
             <td><input type="text" placeholder="Major flaws" oninput="saveState()"></td>
             <td><input type="text" placeholder="Invalid" oninput="saveState()"></td>
-        </tr>
-    `;
-    
+        </tr>`;
     saveState();
 }
-
-document.getElementById('builder-table').addEventListener('paste', function(e) {
-    if (e.target.tagName === 'INPUT') {
-        e.preventDefault();
-        let pasteData = e.clipboardData.getData('text');
-        let rows = pasteData.split(/\r?\n/);
-        
-        let startTd = e.target.closest('td') || e.target.closest('th');
-        if (!startTd) return;
-        
-        let startTr = startTd.parentElement;
-        let isHeader = startTd.tagName === 'TH';
-        let container = startTr.parentElement;
-        
-        let startRowIdx = Array.from(container.children).indexOf(startTr);
-        let startColIdx = Array.from(startTr.children).indexOf(startTd);
-
-        if(!isHeader) {
-            rows.forEach((row, rIdx) => {
-                if (!row.trim() && rIdx === rows.length - 1) return; 
-                let cells = row.split('\t');
-                
-                let targetTr = container.children[startRowIdx + rIdx];
-                if (!targetTr) {
-                    addRow();
-                    targetTr = container.children[startRowIdx + rIdx];
-                }
-                
-                cells.forEach((cell, cIdx) => {
-                    let targetTd = targetTr.children[startColIdx + cIdx];
-                    if (!targetTd) {
-                        addCol();
-                        targetTd = targetTr.children[startColIdx + cIdx];
-                    }
-                    if (targetTd) {
-                        let input = targetTd.querySelector('input');
-                        if (input) {
-                            input.value = cell.trim();
-                            input.removeEventListener('input', saveState);
-                            input.addEventListener('input', saveState);
-                        }
-                    }
-                });
-            });
-            saveState();
-        }
-    }
-});
-
 
 // ==========================================
 // 6. GEMINI AI GENERATION LOGIC
 // ==========================================
 async function generateAppraisal() {
+    const errorBox = document.getElementById('error-box');
+    errorBox.style.display = "none";
+
     let apiKey = localStorage.getItem("gamai_key");
     if (!apiKey) {
         apiKey = prompt("Enter your Gemini API Key:");
-        if (apiKey) localStorage.setItem("gamai_key", apiKey);
+        if (apiKey) localStorage.setItem("gamai_key", apiKey.trim());
         else return;
     }
 
     const paperText = document.getElementById('paper-text').value.trim();
     const rubricData = extractRubricData();
 
-    if(!paperText) {
-        alert("Please upload or paste the Research Paper text.");
-        return;
-    }
-    
-    // Ignore empty rubric rows for AI parsing
+    if(!paperText) { alert("Please upload or paste the Research Paper text."); return; }
     let validRows = rubricData.rows.filter(r => r.some(cell => cell !== ""));
-    if(validRows.length === 0) {
-        alert("Please encode criteria into the rubric table.");
-        return;
-    }
+    if(validRows.length === 0) { alert("Please encode criteria into the rubric table."); return; }
 
     document.getElementById('loading').style.display = "block";
     document.getElementById('output-area').style.display = "none";
@@ -621,9 +545,7 @@ async function generateAppraisal() {
     validRows.forEach((r, i) => rubricString += `Criterion ${i+1}: ${r.join(' | ')}\n`);
 
     const promptText = `Act as an Expert Academic Research Reviewer. 
-    
-    I am providing you with a Research Paper and a strict Rubric.
-    Your task is to appraise the paper based ONLY on the provided rubric.
+    Appraise the paper based ONLY on the provided rubric. Output STRICTLY in JSON format.
 
     === RUBRIC ===
     ${rubricString}
@@ -631,21 +553,11 @@ async function generateAppraisal() {
     === RESEARCH PAPER TEXT ===
     ${paperText.substring(0, 30000)}
 
-    CRITICAL INSTRUCTIONS:
-    Output STRICTLY in JSON format with exactly 3 keys: "Grades", "StrongPoints", "Improvements".
-    
-    1. "Grades": An array of objects. For EACH Criterion in the rubric, provide:
-       - "criterion": The name of the criterion being evaluated.
-       - "score": The specific grade/level awarded (e.g., "Excellent (4)", "Good"). Choose this strictly based on the rubric levels provided.
-       - "justification": A detailed paragraph explaining exactly WHY the paper received this score based on the text.
-       
-    2. "StrongPoints": An array of 3-5 strings detailing the overall best aspects of the paper.
-    3. "Improvements": An array of 3-5 strings suggesting specific actions the author must take to improve the paper.
-
-    IMPORTANT: Return ONLY a valid JSON object. Do not include markdown like \`\`\`json.`;
+    JSON Structure: { "Grades": [ {"criterion": "...", "score": "...", "justification": "..."} ], "StrongPoints": ["..."], "Improvements": ["..."] }`;
 
     try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+        // Using 1.5-flash as it is highly stable for the free tier
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
         
         const response = await fetch(url, {
             method: "POST",
@@ -659,7 +571,12 @@ async function generateAppraisal() {
         const data = await response.json();
         
         if(data.error) {
-             throw new Error(data.error.message);
+             if (data.error.message.includes("limit: 0") || data.error.message.includes("quota")) {
+                localStorage.removeItem("gamai_key"); 
+                throw new Error("<b>Quota Exceeded (Limit: 0).</b> Your API Key has been restricted from the free tier. <br><br><b>How to fix:</b> Go to Google AI Studio, click 'Create API Key', and select <b>'Create API key in NEW project'</b>. Do not reuse your old project. Your bad key has been automatically cleared from the app. Click Generate again to enter your new key.");
+            } else {
+                throw new Error(data.error.message);
+            }
         }
 
         let aiText = data.candidates[0].content.parts[0].text;
@@ -667,35 +584,18 @@ async function generateAppraisal() {
         const appraisal = JSON.parse(aiText);
         
         let reportHtml = `<div class="report-header">Official Appraisal Report</div>`;
-        
-        reportHtml += `<table class="grade-table">
-            <thead>
-                <tr>
-                    <th>Criterion</th>
-                    <th>Awarded Grade</th>
-                    <th>Justification</th>
-                </tr>
-            </thead>
-            <tbody>`;
+        reportHtml += `<table class="grade-table"><thead><tr><th>Criterion</th><th>Awarded Grade</th><th>Justification</th></tr></thead><tbody>`;
             
         appraisal.Grades.forEach(g => {
-            reportHtml += `<tr>
-                <td><strong>${g.criterion}</strong></td>
-                <td>${g.score}</td>
-                <td>${g.justification}</td>
-            </tr>`;
+            reportHtml += `<tr><td><strong>${g.criterion}</strong></td><td>${g.score}</td><td>${g.justification}</td></tr>`;
         });
         reportHtml += `</tbody></table>`;
         
-        reportHtml += `<div class="feedback-box">
-            <h4>✓ Identified Strong Points</h4>
-            <ul>`;
+        reportHtml += `<div class="feedback-box"><h4>✓ Identified Strong Points</h4><ul>`;
         appraisal.StrongPoints.forEach(sp => reportHtml += `<li>${sp}</li>`);
         reportHtml += `</ul></div>`;
         
-        reportHtml += `<div class="feedback-box" style="border-left-color: #8c3b4a;">
-            <h4 style="color: #8c3b4a;">⚠ Areas for Improvement</h4>
-            <ul>`;
+        reportHtml += `<div class="feedback-box" style="border-left-color: #8c3b4a;"><h4 style="color: #8c3b4a;">⚠ Areas for Improvement</h4><ul>`;
         appraisal.Improvements.forEach(imp => reportHtml += `<li>${imp}</li>`);
         reportHtml += `</ul></div>`;
 
@@ -706,10 +606,8 @@ async function generateAppraisal() {
         saveToHistory(reportHtml);
 
     } catch (err) {
-        alert("Generation Error: " + err.message + "\n\nPlease check your API key, or confirm the model string is supported by your API tier.");
-        if(err.message.toLowerCase().includes("api key") || err.message.toLowerCase().includes("auth")) {
-             localStorage.removeItem("gamai_key");
-        }
+        errorBox.innerHTML = err.message;
+        errorBox.style.display = "block";
     } finally {
         document.getElementById('loading').style.display = "none";
         document.getElementById('genBtn').disabled = false;
