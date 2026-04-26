@@ -455,7 +455,7 @@ document.getElementById('builder-table').addEventListener('paste', function(e) {
 });
 
 // ==========================================
-// 6. GEMINI AI DIAGNOSTIC GENERATION
+// 6. GEMINI AI GENERATION LOGIC
 // ==========================================
 async function generateAppraisal() {
     const errorBox = document.getElementById('error-box');
@@ -488,7 +488,8 @@ async function generateAppraisal() {
     JSON Structure: { "Grades": [ {"criterion": "...", "score": "...", "justification": "..."} ], "StrongPoints": ["..."], "Improvements": ["..."] }`;
 
     try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        // UPDATED ENDPOINT: Pointing specifically to gemini-2.5-flash as authorized by your key
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
         
         const response = await fetch(url, {
             method: "POST",
@@ -499,24 +500,6 @@ async function generateAppraisal() {
         const data = await response.json();
         
         if (data.error) {
-            // DIAGNOSTIC INTERCEPT: If model is not found, fetch the list of available models!
-            if (data.error.message.includes("not found") || data.error.message.includes("ListModels")) {
-                const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
-                const listRes = await fetch(listUrl);
-                const listData = await listRes.json();
-                
-                let available = "<span style='color:red;'>None found (Your key is restricted)</span>";
-                
-                if (listData.models && listData.models.length > 0) {
-                    available = listData.models
-                        .filter(m => m.supportedGenerationMethods.includes("generateContent"))
-                        .map(m => m.name.replace('models/', ''))
-                        .join(", ");
-                }
-                
-                throw new Error(`<b>API Key Permission Error:</b> Your key cannot access 'gemini-1.5-flash'. <br><br><b>Models your key CAN access:</b> ${available}<br><br><i>If the list is empty, you need to generate a new key at <b>aistudio.google.com</b> and ensure it is in a new project. Click 'Reset API Key' at the top right to clear your old one.</i>`);
-            }
-            
             throw new Error(`<b>Gemini API Error:</b> ${data.error.message}`);
         }
 
