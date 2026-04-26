@@ -148,10 +148,10 @@
 
     <div class="content">
         <div class="db-controls">
-            <span style="flex: 2; align-content: center; font-weight: bold; color: var(--primary);">💾 Database Management:</span>
-            <button class="db-btn btn-export" onclick="exportDatabase()">Export Data (.json)</button>
-            <input type="file" id="import-file" style="display:none" accept=".json" onchange="importDatabase(event)">
-            <button class="db-btn btn-import" onclick="document.getElementById('import-file').click()">Import Data (.json)</button>
+            <span style="flex: 2; align-content: center; font-weight: bold; color: var(--primary);">💾 Rubric Template Management:</span>
+            <button class="db-btn btn-export" onclick="exportRubric()">Export Rubric (.json)</button>
+            <input type="file" id="import-file" style="display:none" accept=".json" onchange="importRubric(event)">
+            <button class="db-btn btn-import" onclick="document.getElementById('import-file').click()">Import Rubric (.json)</button>
         </div>
 
         <div class="section-title">I. Rubric Encoder</div>
@@ -220,7 +220,7 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
 // ==========================================
-// 2. INDEXEDDB PERSISTENCE LAYER
+// 2. INDEXEDDB PERSISTENCE LAYER (Auto-Save)
 // ==========================================
 const DB_NAME = 'GamAI_AppraiserDB';
 const DB_VERSION = 1;
@@ -337,56 +337,75 @@ function clearHistory() {
     };
 }
 
-function exportDatabase() {
-    const data = { appState: {}, history: [] };
-    const transaction = db.transaction(['appState', 'history'], 'readonly');
+// ==========================================
+// 3. RUBRIC JSON EXPORT / IMPORT
+// ==========================================
+function extractRubricData() {
+    const theadInputs = document.querySelectorAll('#builder-head input');
+    const tbodyRows = document.querySelectorAll('#builder-body tr');
     
-    transaction.objectStore('appState').getAllKeys().onsuccess = (e) => {
-        const keys = e.target.result;
-        transaction.objectStore('appState').getAll().onsuccess = (ev) => {
-            const values = ev.target.result;
-            keys.forEach((k, i) => data.appState[k] = values[i]);
-            
-            transaction.objectStore('history').getAll().onsuccess = (ev2) => {
-                data.history = ev2.target.result;
-                
-                const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = "GamAI_Appraiser_Backup.json";
-                a.click();
-            };
-        };
-    };
+    let headers = Array.from(theadInputs).map(inp => inp.value.trim());
+    let rows = [];
+    
+    tbodyRows.forEach(row => {
+        let rowData = [];
+        row.querySelectorAll('input').forEach(inp => rowData.push(inp.value.trim()));
+        rows.push(rowData);
+    });
+
+    return { headers, rows };
 }
 
-function importDatabase(event) {
+function exportRubric() {
+    const rubricData = extractRubricData();
+    const blob = new Blob([JSON.stringify(rubricData, null, 2)], {type: "application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = "GamAI_Rubric.json";
+    a.click();
+}
+
+function importRubric(event) {
     const file = event.target.files[0];
     if(!file) return;
     const reader = new FileReader();
     reader.onload = (e) => {
         try {
             const data = JSON.parse(e.target.result);
-            const transaction = db.transaction(['appState', 'history'], 'readwrite');
+            if(!data.headers || !data.rows) throw new Error("Invalid format");
             
-            const stateStore = transaction.objectStore('appState');
-            stateStore.clear();
-            for(const [key, value] of Object.entries(data.appState)) {
-                stateStore.put(value, key);
-            }
+            // Rebuild Header
+            const thead = document.getElementById('builder-head');
+            thead.innerHTML = "";
+            data.headers.forEach(h => {
+                const th = document.createElement('th');
+                th.innerHTML = `<input type="text" value="${h}" oninput="saveState()">`;
+                thead.appendChild(th);
+            });
             
-            const historyStore = transaction.objectStore('history');
-            historyStore.clear();
-            data.history.forEach(item => historyStore.put(item));
+            // Rebuild Body
+            const tbody = document.getElementById('builder-body');
+            tbody.innerHTML = "";
+            data.rows.forEach(r => {
+                const tr = document.createElement('tr');
+                r.forEach(cell => {
+                    const td = document.createElement('td');
+                    // We use value attributes so it shows up as text in the input
+                    td.innerHTML = `<input type="text" value="${cell}" oninput="saveState()">`;
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
             
-            transaction.oncomplete = () => {
-                alert("Database imported successfully!");
-                loadState();
-                loadHistory();
-            };
+            saveState(); // Trigger IndexedDB to save new state
+            alert("Rubric Template imported successfully!");
+            
+            // Reset the file input so you can select the same file again later if needed
+            document.getElementById('import-file').value = ""; 
         } catch(err) {
-            alert("Invalid JSON backup file.");
+            alert("Invalid JSON rubric file.");
+            document.getElementById('import-file').value = ""; 
         }
     };
     reader.readAsText(file);
@@ -395,7 +414,7 @@ function importDatabase(event) {
 document.addEventListener("DOMContentLoaded", initDB);
 
 // ==========================================
-// 3. FILE PARSING LOGIC (.TXT, .PDF, .DOCX)
+// 4. FILE PARSING LOGIC (.TXT, .PDF, .DOCX)
 // ==========================================
 document.getElementById('paper-file').addEventListener('change', async function(e) {
     const file = e.target.files[0];
@@ -446,7 +465,7 @@ document.getElementById('paper-file').addEventListener('change', async function(
 });
 
 // ==========================================
-// 4. UI AND TABLE BUILDER LOGIC
+// 5. UI AND TABLE BUILDER LOGIC
 // ==========================================
 function addRow() {
     const tbody = document.getElementById('builder-body');
@@ -495,7 +514,6 @@ function removeCol() {
     }
 }
 
-// NEW: Function to clear the rubric entirely back to a default state
 function clearRubric() {
     if(!confirm("Are you sure you want to clear the entire rubric table?")) return;
     
@@ -568,24 +586,9 @@ document.getElementById('builder-table').addEventListener('paste', function(e) {
     }
 });
 
-function extractRubricData() {
-    const theadInputs = document.querySelectorAll('#builder-head input');
-    const tbodyRows = document.querySelectorAll('#builder-body tr');
-    
-    let headers = Array.from(theadInputs).map(inp => inp.value.trim() || 'Level');
-    let rows = [];
-    
-    tbodyRows.forEach(row => {
-        let rowData = [];
-        row.querySelectorAll('input').forEach(inp => rowData.push(inp.value.trim()));
-        if(rowData.some(val => val !== '')) rows.push(rowData);
-    });
-
-    return { headers, rows };
-}
 
 // ==========================================
-// 5. GEMINI AI GENERATION LOGIC
+// 6. GEMINI AI GENERATION LOGIC
 // ==========================================
 async function generateAppraisal() {
     let apiKey = localStorage.getItem("gamai_key");
@@ -602,7 +605,10 @@ async function generateAppraisal() {
         alert("Please upload or paste the Research Paper text.");
         return;
     }
-    if(rubricData.rows.length === 0) {
+    
+    // Ignore empty rubric rows for AI parsing
+    let validRows = rubricData.rows.filter(r => r.some(cell => cell !== ""));
+    if(validRows.length === 0) {
         alert("Please encode criteria into the rubric table.");
         return;
     }
@@ -612,7 +618,7 @@ async function generateAppraisal() {
     document.getElementById('genBtn').disabled = true;
 
     let rubricString = `Rubric Columns (Grading Scale): ${rubricData.headers.join(' | ')}\n`;
-    rubricData.rows.forEach((r, i) => rubricString += `Criterion ${i+1}: ${r.join(' | ')}\n`);
+    validRows.forEach((r, i) => rubricString += `Criterion ${i+1}: ${r.join(' | ')}\n`);
 
     const promptText = `Act as an Expert Academic Research Reviewer. 
     
@@ -639,7 +645,6 @@ async function generateAppraisal() {
     IMPORTANT: Return ONLY a valid JSON object. Do not include markdown like \`\`\`json.`;
 
     try {
-        // FIXED ENDPOINT: Changed from gemini-1.5-flash to gemini-2.0-flash to resolve the deprecation/not-found error.
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
         
         const response = await fetch(url, {
@@ -654,7 +659,6 @@ async function generateAppraisal() {
         const data = await response.json();
         
         if(data.error) {
-             // If gemini-2.0-flash is somehow restricted, we throw the specific API error message
              throw new Error(data.error.message);
         }
 
@@ -703,7 +707,6 @@ async function generateAppraisal() {
 
     } catch (err) {
         alert("Generation Error: " + err.message + "\n\nPlease check your API key, or confirm the model string is supported by your API tier.");
-        // We only remove the key if the error explicitly mentions authentication/API key issues
         if(err.message.toLowerCase().includes("api key") || err.message.toLowerCase().includes("auth")) {
              localStorage.removeItem("gamai_key");
         }
