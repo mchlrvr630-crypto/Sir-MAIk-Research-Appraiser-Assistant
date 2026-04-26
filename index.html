@@ -233,7 +233,7 @@ function resetApiKey() {
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
 // ==========================================
-// 2. INDEXEDDB PERSISTENCE LAYER (Auto-Save)
+// 2. INDEXEDDB PERSISTENCE LAYER
 // ==========================================
 const DB_NAME = 'GamAI_AppraiserDB';
 const DB_VERSION = 1;
@@ -242,20 +242,14 @@ let db;
 function initDB() {
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
-        
         request.onerror = (e) => reject("IndexedDB Error: " + e.target.errorCode);
-        
         request.onupgradeneeded = (e) => {
             db = e.target.result;
             if(!db.objectStoreNames.contains('appState')) db.createObjectStore('appState');
             if(!db.objectStoreNames.contains('history')) db.createObjectStore('history', { keyPath: 'id' });
         };
-        
         request.onsuccess = (e) => {
-            db = e.target.result;
-            loadState();
-            loadHistory();
-            resolve();
+            db = e.target.result; loadState(); loadHistory(); resolve();
         };
     });
 }
@@ -264,7 +258,6 @@ function saveState() {
     if(!db) return;
     const tableData = document.getElementById('builder-table').innerHTML;
     const paperText = document.getElementById('paper-text').value;
-    
     const transaction = db.transaction(['appState'], 'readwrite');
     const store = transaction.objectStore('appState');
     store.put(tableData, 'currentTable');
@@ -274,14 +267,12 @@ function saveState() {
 function loadState() {
     const transaction = db.transaction(['appState'], 'readonly');
     const store = transaction.objectStore('appState');
-    
     store.get('currentTable').onsuccess = (e) => {
         if(e.target.result) {
             document.getElementById('builder-table').innerHTML = e.target.result;
             document.querySelectorAll('#builder-table input').forEach(inp => inp.addEventListener('input', saveState));
         }
     };
-    
     store.get('currentPaper').onsuccess = (e) => {
         if(e.target.result) document.getElementById('paper-text').value = e.target.result;
     };
@@ -290,41 +281,20 @@ function loadState() {
 function saveToHistory(reportHtml) {
     const transaction = db.transaction(['history'], 'readwrite');
     const store = transaction.objectStore('history');
-    
-    const newItem = {
-        id: Date.now(),
-        date: new Date().toLocaleString(),
-        report: reportHtml
-    };
-    
-    store.add(newItem);
-    
-    const countReq = store.getAll();
-    countReq.onsuccess = () => {
-        let items = countReq.result;
-        if(items.length > 5) {
-            items.sort((a,b) => a.id - b.id);
-            store.delete(items[0].id);
-        }
+    store.add({ id: Date.now(), date: new Date().toLocaleString(), report: reportHtml });
+    store.getAll().onsuccess = (e) => {
+        let items = e.target.result;
+        if(items.length > 5) { items.sort((a,b) => a.id - b.id); store.delete(items[0].id); }
         loadHistory();
     };
 }
 
 function loadHistory() {
-    const transaction = db.transaction(['history'], 'readonly');
-    const store = transaction.objectStore('history');
-    const request = store.getAll();
-    
-    request.onsuccess = () => {
-        const history = request.result.sort((a,b) => b.id - a.id);
+    const store = db.transaction(['history'], 'readonly').objectStore('history');
+    store.getAll().onsuccess = (e) => {
+        const history = e.target.result.sort((a,b) => b.id - a.id);
         const list = document.getElementById('history-list');
-        list.innerHTML = "";
-        
-        if(history.length === 0) {
-            list.innerHTML = "<p style='color:var(--text-muted); font-size:0.9rem;'>No history yet.</p>";
-            return;
-        }
-        
+        list.innerHTML = history.length === 0 ? "<p style='color:var(--text-muted); font-size:0.9rem;'>No history yet.</p>" : "";
         history.forEach(item => {
             const div = document.createElement('div');
             div.className = 'history-item';
@@ -341,9 +311,7 @@ function loadHistory() {
 
 function clearHistory() {
     if(!confirm("Clear all appraisal history?")) return;
-    const transaction = db.transaction(['history'], 'readwrite');
-    transaction.objectStore('history').clear();
-    transaction.oncomplete = () => {
+    db.transaction(['history'], 'readwrite').objectStore('history').clear().onsuccess = () => {
         document.getElementById('report-render').innerHTML = '';
         document.getElementById('output-area').style.display = 'none';
         loadHistory();
@@ -354,27 +322,20 @@ function clearHistory() {
 // 3. RUBRIC JSON EXPORT(SAVE) / IMPORT(LOAD)
 // ==========================================
 function extractRubricData() {
-    const theadInputs = document.querySelectorAll('#builder-head input');
-    const tbodyRows = document.querySelectorAll('#builder-body tr');
-    
-    let headers = Array.from(theadInputs).map(inp => inp.value.trim());
+    const headers = Array.from(document.querySelectorAll('#builder-head input')).map(inp => inp.value.trim());
     let rows = [];
-    
-    tbodyRows.forEach(row => {
+    document.querySelectorAll('#builder-body tr').forEach(row => {
         let rowData = [];
         row.querySelectorAll('input').forEach(inp => rowData.push(inp.value.trim()));
         rows.push(rowData);
     });
-
     return { headers, rows };
 }
 
 function exportRubric() {
-    const rubricData = extractRubricData();
-    const blob = new Blob([JSON.stringify(rubricData, null, 2)], {type: "application/json"});
-    const url = URL.createObjectURL(blob);
+    const blob = new Blob([JSON.stringify(extractRubricData(), null, 2)], {type: "application/json"});
     const a = document.createElement('a');
-    a.href = url;
+    a.href = URL.createObjectURL(blob);
     a.download = "GamAI_Rubric.json";
     a.click();
 }
@@ -386,35 +347,18 @@ function importRubric(event) {
     reader.onload = (e) => {
         try {
             const data = JSON.parse(e.target.result);
-            if(!data.headers || !data.rows) throw new Error("Invalid format");
-            
-            const thead = document.getElementById('builder-head');
-            thead.innerHTML = "";
-            data.headers.forEach(h => {
-                const th = document.createElement('th');
-                th.innerHTML = `<input type="text" value="${h}" oninput="saveState()">`;
-                thead.appendChild(th);
-            });
-            
-            const tbody = document.getElementById('builder-body');
-            tbody.innerHTML = "";
+            if(!data.headers || !data.rows) throw new Error();
+            const thead = document.getElementById('builder-head'); thead.innerHTML = "";
+            data.headers.forEach(h => thead.innerHTML += `<th><input type="text" value="${h}" oninput="saveState()"></th>`);
+            const tbody = document.getElementById('builder-body'); tbody.innerHTML = "";
             data.rows.forEach(r => {
-                const tr = document.createElement('tr');
-                r.forEach(cell => {
-                    const td = document.createElement('td');
-                    td.innerHTML = `<input type="text" value="${cell}" oninput="saveState()">`;
-                    tr.appendChild(td);
-                });
+                let tr = document.createElement('tr');
+                r.forEach(cell => tr.innerHTML += `<td><input type="text" value="${cell}" oninput="saveState()"></td>`);
                 tbody.appendChild(tr);
             });
-            
-            saveState(); 
-            alert("Rubric Template loaded successfully!");
-            document.getElementById('import-file').value = ""; 
-        } catch(err) {
-            alert("Invalid JSON rubric file.");
-            document.getElementById('import-file').value = ""; 
-        }
+            saveState(); alert("Rubric loaded successfully!");
+        } catch(err) { alert("Invalid JSON rubric file."); }
+        document.getElementById('import-file').value = ""; 
     };
     reader.readAsText(file);
 }
@@ -427,41 +371,28 @@ document.addEventListener("DOMContentLoaded", initDB);
 document.getElementById('paper-file').addEventListener('change', async function(e) {
     const file = e.target.files[0];
     if(!file) return;
-
     const textArea = document.getElementById('paper-text');
     textArea.value = "Extracting text from document, please wait...";
-    
-    const extension = file.name.split('.').pop().toLowerCase();
-
+    const ext = file.name.split('.').pop().toLowerCase();
     try {
-        if (extension === 'txt') {
-            const reader = new FileReader();
-            reader.onload = (evt) => { textArea.value = evt.target.result; saveState(); };
-            reader.readAsText(file);
-        } else if (extension === 'pdf') {
-            const arrayBuffer = await file.arrayBuffer();
-            const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
-            let fullText = '';
+        if (ext === 'txt') {
+            const reader = new FileReader(); reader.onload = (evt) => { textArea.value = evt.target.result; saveState(); }; reader.readAsText(file);
+        } else if (ext === 'pdf') {
+            const pdf = await pdfjsLib.getDocument({data: await file.arrayBuffer()}).promise;
+            let text = '';
             for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
-                const textContent = await page.getTextContent();
-                fullText += textContent.items.map(item => item.str).join(' ') + '\n\n';
+                text += (await page.getTextContent()).items.map(item => item.str).join(' ') + '\n\n';
             }
-            textArea.value = fullText; saveState();
-        } else if (extension === 'docx') {
-            const arrayBuffer = await file.arrayBuffer();
-            const result = await mammoth.extractRawText({arrayBuffer: arrayBuffer});
-            textArea.value = result.value; saveState();
-        } else {
-            textArea.value = ""; alert("Unsupported file format.");
-        }
-    } catch (err) {
-        textArea.value = ""; alert("Error reading file: " + err.message);
-    }
+            textArea.value = text; saveState();
+        } else if (ext === 'docx') {
+            textArea.value = (await mammoth.extractRawText({arrayBuffer: await file.arrayBuffer()})).value; saveState();
+        } else { textArea.value = ""; alert("Unsupported file format."); }
+    } catch (err) { textArea.value = ""; alert("Error reading file: " + err.message); }
 });
 
 // ==========================================
-// 5. UI AND TABLE BUILDER LOGIC (FIXED PASTE)
+// 5. UI AND TABLE BUILDER LOGIC
 // ==========================================
 function addRow() {
     const tbody = document.getElementById('builder-body');
@@ -470,108 +401,61 @@ function addRow() {
     for(let i=0; i<cols; i++) tr.innerHTML += `<td><input type="text" placeholder="..." oninput="saveState()"></td>`;
     tbody.appendChild(tr); saveState();
 }
-
 function removeRow() {
     const tbody = document.getElementById('builder-body');
     if(tbody.children.length > 1) { tbody.removeChild(tbody.lastElementChild); saveState(); }
 }
-
 function addCol() {
-    const thead = document.getElementById('builder-head');
-    const tbody = document.getElementById('builder-body');
-    thead.innerHTML += `<th><input type="text" placeholder="New Level" oninput="saveState()"></th>`;
-    for(let row of tbody.children) row.innerHTML += `<td><input type="text" placeholder="..." oninput="saveState()"></td>`;
+    document.getElementById('builder-head').innerHTML += `<th><input type="text" placeholder="New Level" oninput="saveState()"></th>`;
+    for(let row of document.getElementById('builder-body').children) row.innerHTML += `<td><input type="text" placeholder="..." oninput="saveState()"></td>`;
     saveState();
 }
-
 function removeCol() {
-    const thead = document.getElementById('builder-head');
-    const tbody = document.getElementById('builder-body');
-    if(thead.children.length > 1) {
-        thead.removeChild(thead.lastElementChild);
-        for(let row of tbody.children) row.removeChild(row.lastElementChild);
-        saveState();
-    }
+    const thead = document.getElementById('builder-head'); const tbody = document.getElementById('builder-body');
+    if(thead.children.length > 1) { thead.removeChild(thead.lastElementChild); for(let row of tbody.children) row.removeChild(row.lastElementChild); saveState(); }
 }
-
 function clearRubric() {
     if(!confirm("Clear entire rubric?")) return;
-    document.getElementById('builder-head').innerHTML = `
-        <th><input type="text" value="Criteria" oninput="saveState()"></th>
-        <th><input type="text" value="Excellent (4)" oninput="saveState()"></th>
-        <th><input type="text" value="Good (3)" oninput="saveState()"></th>
-        <th><input type="text" value="Fair (2)" oninput="saveState()"></th>
-        <th><input type="text" value="Poor (1)" oninput="saveState()"></th>`;
-    document.getElementById('builder-body').innerHTML = `
-        <tr>
-            <td><input type="text" placeholder="Methodology" oninput="saveState()"></td>
-            <td><input type="text" placeholder="Flawless design" oninput="saveState()"></td>
-            <td><input type="text" placeholder="Minor issues" oninput="saveState()"></td>
-            <td><input type="text" placeholder="Major flaws" oninput="saveState()"></td>
-            <td><input type="text" placeholder="Invalid" oninput="saveState()"></td>
-        </tr>`;
+    document.getElementById('builder-head').innerHTML = `<th><input type="text" value="Criteria" oninput="saveState()"></th><th><input type="text" value="Excellent (4)" oninput="saveState()"></th><th><input type="text" value="Good (3)" oninput="saveState()"></th><th><input type="text" value="Fair (2)" oninput="saveState()"></th><th><input type="text" value="Poor (1)" oninput="saveState()"></th>`;
+    document.getElementById('builder-body').innerHTML = `<tr><td><input type="text" placeholder="Methodology" oninput="saveState()"></td><td><input type="text" placeholder="Flawless design" oninput="saveState()"></td><td><input type="text" placeholder="Minor issues" oninput="saveState()"></td><td><input type="text" placeholder="Major flaws" oninput="saveState()"></td><td><input type="text" placeholder="Invalid" oninput="saveState()"></td></tr>`;
     saveState();
 }
 
-// FIXED: Now allows standard text pasting into a single cell, 
-// while preserving the ability to paste full grids from Excel.
 document.getElementById('builder-table').addEventListener('paste', function(e) {
     if (e.target.tagName === 'INPUT') {
         let pasteData = (e.clipboardData || window.clipboardData).getData('text');
-        
-        // Check if the pasted data looks like a grid (has tabs separating cells)
         if (pasteData.includes('\t') || pasteData.includes('\n')) {
-            e.preventDefault(); // Stop standard single-cell paste
-            
+            e.preventDefault(); 
             let rows = pasteData.split(/\r?\n/);
             let startTd = e.target.closest('td') || e.target.closest('th');
-            if (!startTd) return;
+            if (!startTd || startTd.tagName === 'TH') return;
             
-            let startTr = startTd.parentElement;
-            let isHeader = startTd.tagName === 'TH';
-            let container = startTr.parentElement;
-            
-            let startRowIdx = Array.from(container.children).indexOf(startTr);
-            let startColIdx = Array.from(startTr.children).indexOf(startTd);
+            let container = startTd.parentElement.parentElement;
+            let startRowIdx = Array.from(container.children).indexOf(startTd.parentElement);
+            let startColIdx = Array.from(startTd.parentElement.children).indexOf(startTd);
 
-            if(!isHeader) {
-                rows.forEach((row, rIdx) => {
-                    if (!row.trim() && rIdx === rows.length - 1) return; 
-                    let cells = row.split('\t');
-                    
-                    let targetTr = container.children[startRowIdx + rIdx];
-                    if (!targetTr) {
-                        addRow();
-                        targetTr = container.children[startRowIdx + rIdx];
+            rows.forEach((row, rIdx) => {
+                if (!row.trim() && rIdx === rows.length - 1) return; 
+                let cells = row.split('\t');
+                let targetTr = container.children[startRowIdx + rIdx];
+                if (!targetTr) { addRow(); targetTr = container.children[startRowIdx + rIdx]; }
+                
+                cells.forEach((cell, cIdx) => {
+                    let targetTd = targetTr.children[startColIdx + cIdx];
+                    if (!targetTd) { addCol(); targetTd = targetTr.children[startColIdx + cIdx]; }
+                    if (targetTd) {
+                        let input = targetTd.querySelector('input');
+                        if (input) { input.value = cell.trim(); input.addEventListener('input', saveState); }
                     }
-                    
-                    cells.forEach((cell, cIdx) => {
-                        let targetTd = targetTr.children[startColIdx + cIdx];
-                        if (!targetTd) {
-                            addCol();
-                            targetTd = targetTr.children[startColIdx + cIdx];
-                        }
-                        if (targetTd) {
-                            let input = targetTd.querySelector('input');
-                            if (input) {
-                                input.value = cell.trim();
-                                input.removeEventListener('input', saveState);
-                                input.addEventListener('input', saveState);
-                            }
-                        }
-                    });
                 });
-                saveState();
-            }
+            });
+            saveState();
         }
-        // If it does NOT include tabs or new lines, it ignores the grid logic 
-        // and just lets your browser paste the text normally into the input box!
     }
 });
 
-
 // ==========================================
-// 6. GEMINI AI GENERATION LOGIC
+// 6. GEMINI AI GENERATION LOGIC (WITH FALLBACK)
 // ==========================================
 async function generateAppraisal() {
     const errorBox = document.getElementById('error-box');
@@ -595,50 +479,59 @@ async function generateAppraisal() {
     document.getElementById('output-area').style.display = "none";
     document.getElementById('genBtn').disabled = true;
 
-    let rubricString = `Rubric Columns (Grading Scale): ${rubricData.headers.join(' | ')}\n`;
+    let rubricString = `Rubric Columns: ${rubricData.headers.join(' | ')}\n`;
     validRows.forEach((r, i) => rubricString += `Criterion ${i+1}: ${r.join(' | ')}\n`);
 
     const promptText = `Act as an Expert Academic Research Reviewer. 
     Appraise the paper based ONLY on the provided rubric. Output STRICTLY in JSON format.
-
-    === RUBRIC ===
-    ${rubricString}
-
-    === RESEARCH PAPER TEXT ===
-    ${paperText.substring(0, 30000)}
-
+    === RUBRIC ===\n${rubricString}\n=== RESEARCH PAPER TEXT ===\n${paperText.substring(0, 30000)}
     JSON Structure: { "Grades": [ {"criterion": "...", "score": "...", "justification": "..."} ], "StrongPoints": ["..."], "Improvements": ["..."] }`;
 
+    const modelsToTry = ["gemini-1.5-flash-latest", "gemini-1.5-pro-latest", "gemini-pro"];
+    let successfulData = null;
+    let lastErrorMessage = "";
+
     try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-        
-        const response = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-                contents: [{ parts: [{ text: promptText }] }],
-                generationConfig: { responseMimeType: "application/json" }
-            })
-        });
-        
-        const data = await response.json();
-        
-        if(data.error) {
-             if (data.error.message.includes("limit: 0") || data.error.message.includes("quota")) {
-                localStorage.removeItem("gamai_key"); 
-                throw new Error("<b>Quota Exceeded (Limit: 0).</b> Your API Key has been restricted from the free tier. <br><br><b>How to fix:</b> Go to Google AI Studio, click 'Create API Key', and select <b>'Create API key in NEW project'</b>. Do not reuse your old project. Your bad key has been automatically cleared from the app. Click Generate again to enter your new key.");
-            } else {
-                throw new Error(data.error.message);
+        for (const model of modelsToTry) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+            
+            const response = await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                    contents: [{ parts: [{ text: promptText }] }],
+                    generationConfig: { responseMimeType: "application/json" }
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.error) {
+                // If it's a quota issue, stop immediately and throw.
+                if (data.error.message.includes("limit: 0") || data.error.message.includes("quota")) {
+                    localStorage.removeItem("gamai_key"); 
+                    throw new Error("<b>Quota Exceeded (Limit: 0).</b> Your API Key has been restricted from the free tier. <br><br><b>How to fix:</b> Go to Google AI Studio, click 'Create API Key', and select <b>'Create API key in NEW project'</b>. Your bad key has been automatically cleared. Click Generate again to enter your new key.");
+                }
+                // Otherwise (like model not found), log the error and try the next model in the array
+                lastErrorMessage = data.error.message;
+                continue; 
             }
+            
+            // If we succeed, capture data and break the loop
+            successfulData = data;
+            break;
         }
 
-        let aiText = data.candidates[0].content.parts[0].text;
+        if (!successfulData) {
+            throw new Error(`Failed to generate content with all fallback models. Last error: ${lastErrorMessage}`);
+        }
+
+        let aiText = successfulData.candidates[0].content.parts[0].text;
         aiText = aiText.replace(/```json/g, '').replace(/```/g, '').trim();
         const appraisal = JSON.parse(aiText);
         
         let reportHtml = `<div class="report-header">Official Appraisal Report</div>`;
         reportHtml += `<table class="grade-table"><thead><tr><th>Criterion</th><th>Awarded Grade</th><th>Justification</th></tr></thead><tbody>`;
-            
         appraisal.Grades.forEach(g => {
             reportHtml += `<tr><td><strong>${g.criterion}</strong></td><td>${g.score}</td><td>${g.justification}</td></tr>`;
         });
